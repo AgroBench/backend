@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,8 +22,11 @@ import (
 	"github.com/AgroBench/backend/pkg/port"
 )
 
+var _ port.ReferenceDataClient = (*Client)(nil)
+
 type Config struct {
 	BaseURL      string
+	PathTemplate string // TODO(conab): confirmar path e parâmetros. Default abaixo.
 	Timeout      time.Duration
 	TolerancePct float64 // faixa = média × (1 ± tolerância). Default 40%.
 }
@@ -48,6 +52,9 @@ func New(cfg Config) (*Client, error) {
 	if cfg.BaseURL == "" {
 		return nil, errors.New("refdata conab: base_url é obrigatória")
 	}
+	if cfg.PathTemplate == "" {
+		cfg.PathTemplate = pathTemplate
+	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Second
 	}
@@ -58,8 +65,8 @@ func New(cfg Config) (*Client, error) {
 }
 
 func (c *Client) ExpectedRanges(ctx context.Context, cultureCode, ibgeCode string) ([]port.ReferenceRange, error) {
-	url := strings.TrimRight(c.cfg.BaseURL, "/") + fmt.Sprintf(pathTemplate, cultureCode, ibgeCode)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := strings.TrimRight(c.cfg.BaseURL, "/") + fmt.Sprintf(c.cfg.PathTemplate, url.QueryEscape(cultureCode), url.QueryEscape(ibgeCode))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}

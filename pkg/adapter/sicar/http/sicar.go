@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,10 +22,13 @@ import (
 	"github.com/AgroBench/backend/pkg/port"
 )
 
+var _ port.SicarClient = (*Client)(nil)
+
 type Config struct {
-	BaseURL string        // ex.: https://api.car.gov.br  (TODO: confirmar)
-	APIKey  string        // se o endpoint exigir
-	Timeout time.Duration // default 10s
+	BaseURL      string        // ex.: https://api.car.gov.br  (TODO(sicar): confirmar)
+	APIKey       string        // se o endpoint exigir
+	PathTemplate string        // TODO(sicar): confirmar o path real. Default abaixo.
+	Timeout      time.Duration // default 10s
 }
 
 type Client struct {
@@ -49,6 +53,9 @@ func New(cfg Config) (*Client, error) {
 	if cfg.BaseURL == "" {
 		return nil, errors.New("sicar http: base_url é obrigatória")
 	}
+	if cfg.PathTemplate == "" {
+		cfg.PathTemplate = pathTemplate
+	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Second
 	}
@@ -56,8 +63,8 @@ func New(cfg Config) (*Client, error) {
 }
 
 func (c *Client) Lookup(ctx context.Context, car string) (port.CARRecord, error) {
-	url := strings.TrimRight(c.cfg.BaseURL, "/") + fmt.Sprintf(pathTemplate, crypto.NormalizeIdentifier(car))
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, url, nil)
+	endpoint := strings.TrimRight(c.cfg.BaseURL, "/") + fmt.Sprintf(c.cfg.PathTemplate, url.PathEscape(crypto.NormalizeIdentifier(car)))
+	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, endpoint, nil)
 	if err != nil {
 		return port.CARRecord{}, err
 	}

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	ag "github.com/gagliardetto/solana-go"
@@ -30,6 +31,8 @@ import (
 	"github.com/AgroBench/backend/internal/core/domain"
 	"github.com/AgroBench/backend/pkg/port"
 )
+
+var _ port.ChainClient = (*Chain)(nil)
 
 const memoPrefix = "agrobench:v1"
 
@@ -144,7 +147,12 @@ func (c *Chain) Balance(ctx context.Context, account port.Account) (domain.Micro
 	}
 	res, err := c.rpc.GetTokenAccountBalance(ctx, acc, rpc.CommitmentConfirmed)
 	if err != nil {
-		// ATA inexistente = saldo zero, não erro.
+		if isMissingAccount(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("chain solana: saldo: %w", err)
+	}
+	if res == nil || res.Value == nil {
 		return 0, nil
 	}
 	// USDC tem 6 decimais: Amount (menor unidade) == micro-USDC.
@@ -221,4 +229,12 @@ func (c *Chain) accountExists(ctx context.Context, acc ag.PublicKey) (bool, erro
 		return false, fmt.Errorf("chain solana: account info: %w", err)
 	}
 	return info != nil && info.Value != nil, nil
+}
+
+func isMissingAccount(err error) bool {
+	if errors.Is(err, rpc.ErrNotFound) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "could not find account")
 }

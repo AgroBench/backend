@@ -80,6 +80,14 @@ func unknown(name, impl string) error {
 	return fmt.Errorf("adapters.%s: implementação desconhecida %q", name, impl)
 }
 
+func seconds(key string) time.Duration {
+	n := viper.GetInt(key)
+	if n <= 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
+}
+
 func buildChain(db *sqlx.DB) (port.ChainClient, *chainMock.Chain, error) {
 	switch impl := choice("chain"); impl {
 	case "mock":
@@ -94,7 +102,7 @@ func buildChain(db *sqlx.DB) (port.ChainClient, *chainMock.Chain, error) {
 			TreasuryPrivateKey: viper.GetString("chain.solana.treasury_private_key"),
 			USDCMint:           viper.GetString("chain.solana.usdc_mint"),
 			PoolPubkey:         viper.GetString("chain.solana.pool_pubkey"),
-			ConfirmTimeout:     time.Duration(viper.GetInt("chain.solana.confirm_timeout_seconds")) * time.Second,
+			ConfirmTimeout:     seconds("chain.solana.confirm_timeout_seconds"),
 		})
 		return c, nil, err
 	default:
@@ -129,6 +137,7 @@ func buildEnclave() (port.Enclave, error) {
 			Port:         uint32(viper.GetInt("enclave.nitro.port")),
 			RootCertPEM:  rootPEM,
 			ExpectedPCRs: pcrs,
+			Timeout:      seconds("enclave.nitro.timeout_seconds"),
 		})
 	default:
 		return nil, unknown("enclave", impl)
@@ -141,8 +150,10 @@ func buildSicar(db *sqlx.DB) (port.SicarClient, error) {
 		return sicarMock.New(db), nil
 	case "http":
 		return sicarHTTP.New(sicarHTTP.Config{
-			BaseURL: viper.GetString("sicar.http.base_url"),
-			APIKey:  viper.GetString("sicar.http.api_key"),
+			BaseURL:      viper.GetString("sicar.http.base_url"),
+			APIKey:       viper.GetString("sicar.http.api_key"),
+			PathTemplate: viper.GetString("sicar.http.path_template"),
+			Timeout:      seconds("sicar.http.timeout_seconds"),
 		})
 	default:
 		return nil, unknown("sicar", impl)
@@ -156,7 +167,9 @@ func buildRefData(db *sqlx.DB) (port.ReferenceDataClient, error) {
 	case "conab":
 		return refdataConab.New(refdataConab.Config{
 			BaseURL:      viper.GetString("reference_data.conab.base_url"),
+			PathTemplate: viper.GetString("reference_data.conab.path_template"),
 			TolerancePct: viper.GetFloat64("reference_data.conab.tolerance_pct"),
+			Timeout:      seconds("reference_data.conab.timeout_seconds"),
 		})
 	default:
 		return nil, unknown("reference_data", impl)
@@ -173,6 +186,7 @@ func buildSMS() (port.SmsSender, *smsMock.Sender, error) {
 			AccountSID: viper.GetString("sms.twilio.account_sid"),
 			AuthToken:  viper.GetString("sms.twilio.auth_token"),
 			From:       viper.GetString("sms.twilio.from"),
+			Timeout:    seconds("sms.twilio.timeout_seconds"),
 		})
 		return s, nil, err
 	default:

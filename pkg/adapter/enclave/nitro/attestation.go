@@ -95,7 +95,7 @@ func VerifyAttestation(raw []byte, rootPEM []byte, expectedPCRs map[int]string, 
 			return nil, fmt.Errorf("PCR%d ausente no documento", idx)
 		}
 		if !strings.EqualFold(hex.EncodeToString(got), wantHex) {
-			return nil, fmt.Errorf("PCR%d divergente (esperado %s…, obtido %s…)", idx, wantHex[:16], pcrHex(got)[:16])
+			return nil, fmt.Errorf("PCR%d divergente (esperado %s…, obtido %s…)", idx, truncHex(wantHex), truncHex(pcrHex(got)))
 		}
 	}
 	return &doc, nil
@@ -109,4 +109,13 @@ func ParseRootPEM(data []byte) error {
 	}
 	_, err := x509.ParseCertificate(block.Bytes)
 	return err
+}
+
+func pcrHex(b []byte) string { return hex.EncodeToString(b) }
+
+func truncHex(s string) string {
+	if len(s) <= 16 {
+		return s
+	}
+	return s[:16]
 }

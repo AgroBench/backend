@@ -24,6 +24,8 @@ import (
 	"github.com/AgroBench/backend/pkg/port"
 )
 
+var _ port.PaymentGateway = (*Gateway)(nil)
+
 type Config struct {
 	SecretKey     string
 	WebhookSecret string
@@ -60,7 +62,6 @@ func (g *Gateway) CreateCheckout(ctx context.Context, req port.CheckoutRequest) 
 		SuccessURL:        stripe.String(g.cfg.SuccessURL),
 		CancelURL:         stripe.String(g.cfg.CancelURL),
 		ClientReferenceID: stripe.String(req.SubscriptionID.String()),
-		CustomerEmail:     stripe.String(req.CustomerEmail),
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{{
 			Quantity: stripe.Int64(1),
 			PriceData: &stripe.CheckoutSessionCreateLineItemPriceDataParams{
@@ -71,6 +72,9 @@ func (g *Gateway) CreateCheckout(ctx context.Context, req port.CheckoutRequest) 
 				},
 			},
 		}},
+	}
+	if req.CustomerEmail != "" {
+		params.CustomerEmail = stripe.String(req.CustomerEmail)
 	}
 	params.AddMetadata("subscription_id", req.SubscriptionID.String())
 	params.AddMetadata("institution_id", req.InstitutionID.String())

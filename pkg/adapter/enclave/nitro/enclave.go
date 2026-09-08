@@ -16,7 +16,6 @@ package nitro
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +28,8 @@ import (
 	"github.com/AgroBench/backend/internal/core/validate"
 	"github.com/AgroBench/backend/pkg/port"
 )
+
+var _ port.Enclave = (*Enclave)(nil)
 
 type Config struct {
 	CID          uint32         // context id do enclave (nitro-cli describe-enclaves → EnclaveCID)
@@ -144,6 +145,3 @@ func (e *Enclave) roundTrip(ctx context.Context, req Request, res *Response) err
 	}
 	return nil
 }
-
-// pcrHex é helper para logs/config.
-func pcrHex(b []byte) string { return hex.EncodeToString(b) }

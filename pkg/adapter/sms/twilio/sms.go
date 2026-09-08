@@ -15,13 +15,21 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/AgroBench/backend/pkg/port"
 )
+
+var _ port.SmsSender = (*Sender)(nil)
+
+const defaultAPIBase = "https://api.twilio.com"
 
 type Config struct {
 	AccountSID string
 	AuthToken  string
 	From       string // número Twilio em E.164 ou Messaging Service SID
 	Timeout    time.Duration
+	// APIBase sobrescreve a URL da Messages API (só testes). Default https://api.twilio.com.
+	APIBase string
 }
 
 type Sender struct {
@@ -36,6 +44,9 @@ func New(cfg Config) (*Sender, error) {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Second
 	}
+	if cfg.APIBase == "" {
+		cfg.APIBase = defaultAPIBase
+	}
 	return &Sender{cfg: cfg, http: &http.Client{Timeout: cfg.Timeout}}, nil
 }
 
@@ -47,7 +58,7 @@ func (s *Sender) Send(ctx context.Context, phoneE164, message string) error {
 		form.Set("From", s.cfg.From)
 	}
 
-	endpoint := fmt.Sprintf("https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json", s.cfg.AccountSID)
+	endpoint := fmt.Sprintf("%s/2010-04-01/Accounts/%s/Messages.json", strings.TrimRight(s.cfg.APIBase, "/"), s.cfg.AccountSID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return err

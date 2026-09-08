@@ -85,9 +85,10 @@
       "signing_private_seed": ""
     },
     "nitro": {
-      "cid": 0,
+      "cid": 16,
       "port": 5000,
       "root_cert_path": "config/aws_nitro_root.pem",
+      "timeout_seconds": 30,
       "expected_pcrs": {
         "0": "",
         "1": "",
@@ -98,20 +99,25 @@
   "sicar": {
     "http": {
       "base_url": "",
-      "api_key": ""
+      "path_template": "/api/v1/imoveis/%s",
+      "api_key": "",
+      "timeout_seconds": 10
     }
   },
   "reference_data": {
     "conab": {
       "base_url": "",
-      "tolerance_pct": 40
+      "path_template": "/api/v1/custos?cultura=%s&microrregiao=%s",
+      "tolerance_pct": 40,
+      "timeout_seconds": 10
     }
   },
   "sms": {
     "twilio": {
       "account_sid": "",
       "auth_token": "",
-      "from": ""
+      "from": "",
+      "timeout_seconds": 10
     }
   },
   "payment": {
@@ -121,8 +127,8 @@
     "stripe": {
       "secret_key": "",
       "webhook_secret": "",
-      "success_url": "",
-      "cancel_url": "",
+      "success_url": "http://localhost:8080/payment/success?session_id={CHECKOUT_SESSION_ID}",
+      "cancel_url": "http://localhost:8080/payment/cancel",
       "currency": "usd",
       "fiat_per_usdc": 1
     }
