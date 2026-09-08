@@ -1,0 +1,130 @@
+{
+  "app": {
+    "name": "agrobench",
+    "env": "dev",
+    "timezone": "America/Sao_Paulo"
+  },
+  "server": {
+    "http": {
+      "port": "8080",
+      "read_timeout_seconds": 15,
+      "write_timeout_seconds": 30,
+      "shutdown_timeout_seconds": 10
+    }
+  },
+  "database": {
+    "url": "postgres://agrobench:agrobench@localhost:5432/agrobench?sslmode=disable",
+    "max_open_conns": 20,
+    "max_idle_conns": 5,
+    "auto_migrate": true
+  },
+  "log": {
+    "level": "debug",
+    "format": "text"
+  },
+  "adapters": {
+    "chain": "mock",
+    "enclave": "mock",
+    "sicar": "mock",
+    "reference_data": "mock",
+    "sms": "mock",
+    "payment": "mock"
+  },
+  "auth": {
+    "pepper": "",
+    "jwt_secret": "",
+    "access_ttl_minutes": 15,
+    "refresh_ttl_days": 30,
+    "otp_ttl_minutes": 5,
+    "otp_max_attempts": 5
+  },
+  "rewards": {
+    "base_usdc": 5,
+    "level_multipliers": {
+      "basic": 1,
+      "intermediate": 2,
+      "advanced": 3.5
+    }
+  },
+  "stake": {
+    "amount_usdc": 10,
+    "release_after_cycles": 2
+  },
+  "benchmark": {
+    "free_after_cycles": 3
+  },
+  "pool": {
+    "maintainer_fee_pct": 15,
+    "infra_cost_per_contribution_usdc": 2
+  },
+  "plans": {
+    "regional": {
+      "price_usdc": 500,
+      "max_regions": 5
+    },
+    "national": {
+      "price_usdc": 2000
+    }
+  },
+  "chain": {
+    "mock": {
+      "treasury": "",
+      "pool": ""
+    },
+    "solana": {
+      "rpc_url": "https://api.devnet.solana.com",
+      "treasury_private_key": "",
+      "usdc_mint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      "pool_pubkey": "",
+      "confirm_timeout_seconds": 60
+    }
+  },
+  "enclave": {
+    "mock": {
+      "box_private_key": "",
+      "signing_private_seed": ""
+    },
+    "nitro": {
+      "cid": 0,
+      "port": 5000,
+      "root_cert_path": "config/aws_nitro_root.pem",
+      "expected_pcrs": {
+        "0": "",
+        "1": "",
+        "2": ""
+      }
+    }
+  },
+  "sicar": {
+    "http": {
+      "base_url": "",
+      "api_key": ""
+    }
+  },
+  "reference_data": {
+    "conab": {
+      "base_url": "",
+      "tolerance_pct": 40
+    }
+  },
+  "sms": {
+    "twilio": {
+      "account_sid": "",
+      "auth_token": "",
+      "from": ""
+    }
+  },
+  "payment": {
+    "mock": {
+      "base_url": "http://localhost:8080"
+    },
+    "stripe": {
+      "secret_key": "",
+      "webhook_secret": "",
+      "success_url": "",
+      "cancel_url": "",
+      "currency": "usd",
+      "fiat_per_usdc": 1
+    }
+  }
+}

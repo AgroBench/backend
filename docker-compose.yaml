@@ -1,0 +1,54 @@
+services:
+  api:
+    container_name: agrobench-api
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: ${PORT:-8080}
+      DATABASE_URL: postgres://agrobench:agrobench@db:5432/agrobench?sslmode=disable
+      CONFIG_FILE: config/env/config.dev.json
+    volumes:
+      - .:/api
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - agrobench
+
+  db:
+    container_name: agrobench-db
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: agrobench
+      POSTGRES_PASSWORD: agrobench
+      POSTGRES_DB: agrobench
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agrobench -d agrobench"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - agrobench
+
+volumes:
+  pg-data:
+  go-mod-cache:
+  go-build-cache:
+
+networks:
+  agrobench:
+    driver: bridge

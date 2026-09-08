@@ -1,0 +1,6 @@
+bin/
+dev/
+air.log
+.env
+*.test
+coverage.out

@@ -1,0 +1,14 @@
+# Imagem de desenvolvimento: Go + Air (hot-reload) + migrate CLI.
+# O código é montado por volume em /api (ver docker-compose.yaml).
+FROM golang:1.26
+
+WORKDIR /api
+
+RUN go install github.com/air-verse/air@latest \
+ && go install -tags 'postgres,pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# Cache de módulos entre rebuilds da imagem
+COPY go.mod go.sum* ./
+RUN go mod download || true
+
+CMD ["air", "-c", ".air.toml"]
