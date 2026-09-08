@@ -4,14 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 
 	"github.com/AgroBench/backend/internal/apperrors"
+	"github.com/AgroBench/backend/internal/contribution/contract"
 	"github.com/AgroBench/backend/internal/contribution/domain"
 	coredomain "github.com/AgroBench/backend/internal/core/domain"
+	"github.com/AgroBench/backend/pkg/adapter/database"
 )
 
 type row struct {
@@ -51,6 +54,16 @@ const cols = `id, cycle_id, wallet_id, property_id, level, attempt, commit_hash,
 type Repo struct{ db sqlx.ExtContext }
 
 func New(db sqlx.ExtContext) *Repo { return &Repo{db: db} }
+
+func (r *Repo) WithTx(ctx context.Context, fn func(contract.Repo) error) error {
+	db, ok := r.db.(*sqlx.DB)
+	if !ok {
+		return apperrors.Internal("contribution.WithTx", fmt.Errorf("conexão não transacional"))
+	}
+	return database.WithTx(ctx, db, func(tx *sqlx.Tx) error {
+		return fn(New(tx))
+	})
+}
 
 func (r *Repo) Create(ctx context.Context, c domain.Contribution) error {
 	_, err := r.db.ExecContext(ctx, `

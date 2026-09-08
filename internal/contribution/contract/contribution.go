@@ -22,4 +22,5 @@ type Repo interface {
 	SaveVerdict(ctx context.Context, v domain.Verdict, metrics []domain.ValidatedMetric) error
 	SaveAttestation(ctx context.Context, a domain.Attestation) error
 	ConsecutiveAccepted(ctx context.Context, walletID, cultureID, regionID uuid.UUID) (int, error)
+	WithTx(ctx context.Context, fn func(Repo) error) error
 }

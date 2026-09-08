@@ -86,21 +86,35 @@ func (u *Commit) Execute(ctx context.Context, userID uuid.UUID, in input.Commit)
 		return output.Contribution{}, apperrors.External(op, 0, err).WithDetail("falha no commit on-chain")
 	}
 	c.CommitTx = string(tx)
-	if attempt == 1 {
+
+	var stakeLocked bool
+	var stakeReq port.StakeRequest
+	err = u.repo.WithTx(ctx, func(txRepo contract.Repo) error {
+		if err := txRepo.Create(ctx, c); err != nil {
+			return err
+		}
+		if attempt != 1 {
+			return nil
+		}
 		amount := viper.GetFloat64("stake.amount_usdc")
-		lockTx, err := u.chain.LockStake(ctx, port.StakeRequest{
+		stakeReq = port.StakeRequest{
 			Wallet: port.Account(wallet.Pubkey), ContributionID: c.ID, Amount: coredomain.USDC(amount),
-		})
+		}
+		lockTx, err := u.chain.LockStake(ctx, stakeReq)
 		if err != nil {
-			return output.Contribution{}, apperrors.External(op, 0, err).WithDetail("falha ao travar stake (saldo insuficiente?)")
+			return apperrors.External(op, 0, err).WithDetail("falha ao travar stake (saldo insuficiente?)")
 		}
-		if err := u.repo.CreateStake(ctx, cdomain.Stake{
+		stakeLocked = true
+		return txRepo.CreateStake(ctx, cdomain.Stake{
 			ID: coredomain.NewID(), ContributionID: c.ID, AmountUSDC: amount, LockTx: string(lockTx), Status: cdomain.StakeLocked,
-		}); err != nil {
-			return output.Contribution{}, err
+		})
+	})
+	if err != nil {
+		if stakeLocked {
+			if _, relErr := u.chain.ReleaseStake(ctx, stakeReq); relErr != nil {
+				err = errors.Join(err, relErr)
+			}
 		}
-	}
-	if err := u.repo.Create(ctx, c); err != nil {
 		return output.Contribution{}, err
 	}
 	return output.New(c), nil
