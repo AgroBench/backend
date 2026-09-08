@@ -1,0 +1,17 @@
+meta {
+  name: Get OTP (mock)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/admin/otp/{{user_id}}
+  body: none
+  auth: none
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("otp_code", res.body.code);
+  }
+}

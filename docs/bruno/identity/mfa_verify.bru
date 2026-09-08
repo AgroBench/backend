@@ -1,0 +1,29 @@
+meta {
+  name: MFA Verify
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/auth/mfa/verify
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "mfa_token": "{{mfa_token}}",
+    "code": "{{otp_code}}"
+  }
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("access_token", res.body.access_token);
+    bru.setVar("refresh_token", res.body.refresh_token);
+  }
+}

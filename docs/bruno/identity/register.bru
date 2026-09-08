@@ -1,0 +1,31 @@
+meta {
+  name: Register
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/auth/register
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "produtor@agrobench.local",
+    "phone": "+5554999990001",
+    "cpf": "529.982.247-25",
+    "password": "senha-segura-1"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("mfa_token", res.body.mfa_token);
+    bru.setVar("user_id", res.body.user_id);
+  }
+}

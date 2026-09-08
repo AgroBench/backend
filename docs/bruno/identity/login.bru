@@ -1,0 +1,33 @@
+meta {
+  name: Login
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "produtor@agrobench.local",
+    "password": "senha-segura-1"
+  }
+}
+
+script:post-response {
+  if (res.body.mfa_token) {
+    bru.setVar("mfa_token", res.body.mfa_token);
+    bru.setVar("user_id", res.body.user_id);
+  }
+  if (res.body.access_token) {
+    bru.setVar("access_token", res.body.access_token);
+    bru.setVar("refresh_token", res.body.refresh_token);
+  }
+}

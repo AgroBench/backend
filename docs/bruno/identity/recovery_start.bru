@@ -1,0 +1,22 @@
+meta {
+  name: Recovery Start
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/auth/recovery/start
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "cpf": "529.982.247-25",
+    "phone": "+5554999990001"
+  }
+}
