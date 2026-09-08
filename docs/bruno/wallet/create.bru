@@ -1,0 +1,27 @@
+meta {
+  name: Create wallet
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/wallet
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "pubkey": "ProducerWallet1111111111111111111111111111",
+    "encrypted_blob": "dGVzdC1ibG9iLWNpZnJhZG8=",
+    "blob_version": 1
+  }
+}

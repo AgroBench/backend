@@ -1,0 +1,25 @@
+meta {
+  name: Reveal contribution
+  type: http
+  seq: 32
+}
+
+post {
+  url: {{baseUrl}}/contributions/{{contribution_id}}/reveal
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "ciphertext": "{{ciphertext_b64}}"
+  }
+}

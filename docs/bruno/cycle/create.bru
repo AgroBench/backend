@@ -1,0 +1,29 @@
+meta {
+  name: Create cycle (admin)
+  type: http
+  seq: 21
+}
+
+post {
+  url: {{baseUrl}}/admin/cycles
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "culture_id": "{{culture_id}}",
+    "micro_region_id": "{{micro_region_id}}",
+    "label": "2025/26",
+    "opens_at": "2025-09-01T00:00:00Z",
+    "closes_at": "2026-03-01T00:00:00Z"
+  }
+}

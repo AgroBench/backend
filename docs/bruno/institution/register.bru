@@ -1,0 +1,24 @@
+meta {
+  name: Register institution
+  type: http
+  seq: 50
+}
+
+post {
+  url: {{baseUrl}}/institutions/register
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "coop@agrobench.local",
+    "password": "senha-segura-1",
+    "cnpj": "12.345.678/0001-99",
+    "name": "Cooperativa Demo"
+  }
+}

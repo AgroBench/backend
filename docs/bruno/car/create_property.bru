@@ -1,0 +1,26 @@
+meta {
+  name: Create property
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{baseUrl}}/property
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "car": "RS-4314100-AAA00000000000000001",
+    "micro_region_id": "{{micro_region_id}}"
+  }
+}

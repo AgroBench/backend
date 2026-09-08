@@ -1,0 +1,26 @@
+meta {
+  name: Subscribe (institution)
+  type: http
+  seq: 51
+}
+
+post {
+  url: {{baseUrl}}/institutions/subscribe
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "plan": "regional",
+    "regions": ["{{micro_region_id}}"]
+  }
+}

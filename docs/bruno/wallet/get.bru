@@ -1,0 +1,15 @@
+meta {
+  name: Get wallet
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/wallet
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Close cycle (admin)
+  type: http
+  seq: 22
+}
+
+post {
+  url: {{baseUrl}}/admin/cycles/{{cycle_id}}/close
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}

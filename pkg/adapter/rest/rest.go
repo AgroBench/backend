@@ -16,11 +16,22 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/viper"
 
+	adminRest "github.com/AgroBench/backend/internal/admin/rest"
+	benchmarkRest "github.com/AgroBench/backend/internal/benchmark/rest"
+	carRest "github.com/AgroBench/backend/internal/car/rest"
+	contributionRest "github.com/AgroBench/backend/internal/contribution/rest"
 	"github.com/AgroBench/backend/internal/core/httpx"
+	cycleRest "github.com/AgroBench/backend/internal/cycle/rest"
+	identityRest "github.com/AgroBench/backend/internal/identity/rest"
+	institutionRest "github.com/AgroBench/backend/internal/institution/rest"
+	poolRest "github.com/AgroBench/backend/internal/pool/rest"
+	walletrepo "github.com/AgroBench/backend/internal/wallet/repository"
+	walletRest "github.com/AgroBench/backend/internal/wallet/rest"
+	"github.com/AgroBench/backend/pkg/adapter/queue"
 	"github.com/AgroBench/backend/pkg/adapter/registry"
 )
 
-func NewRouter(db *sqlx.DB, adapters *registry.Adapters) http.Handler {
+func NewRouter(db *sqlx.DB, adapters *registry.Adapters, q *queue.Queue) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -51,22 +62,27 @@ func NewRouter(db *sqlx.DB, adapters *registry.Adapters) http.Handler {
 	registerHealth(r, db)
 
 	r.Route("/api/v1", func(api chi.Router) {
-		// MÓDULOS — um registro por módulo, na ordem dos módulos do README §4:
-		// identityRest.Register(api, db, adapters)
-		// walletRest.Register(api, db, adapters)
-		// ...
-		_, _ = api, adapters
+		wallets := walletrepo.New(db)
+		identityRest.Register(api, db, adapters, wallets)
+		walletRest.Register(api, db, adapters)
+		carRest.Register(api, db, adapters)
+		cycleRest.Register(api, db, q)
+		contributionRest.Register(api, db, adapters, q)
+		benchmarkRest.Register(api, db)
+		institutionRest.Register(api, db, adapters)
+		poolRest.Register(api, db, q)
+		adminRest.Register(api, db, adapters, q)
 	})
 
 	return r
 }
 
 // Serve sobe o servidor HTTP e faz graceful shutdown quando ctx é cancelado (SIGINT/SIGTERM).
-func Serve(ctx context.Context, db *sqlx.DB, adapters *registry.Adapters) error {
+func Serve(ctx context.Context, db *sqlx.DB, adapters *registry.Adapters, q *queue.Queue) error {
 	port := viper.GetString("server.http.port")
 	srv := &http.Server{
 		Addr:         ":" + port,
-		Handler:      NewRouter(db, adapters),
+		Handler:      NewRouter(db, adapters, q),
 		ReadTimeout:  time.Duration(viper.GetInt("server.http.read_timeout_seconds")) * time.Second,
 		WriteTimeout: time.Duration(viper.GetInt("server.http.write_timeout_seconds")) * time.Second,
 		IdleTimeout:  60 * time.Second,

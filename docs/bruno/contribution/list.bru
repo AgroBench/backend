@@ -1,0 +1,15 @@
+meta {
+  name: List contributions
+  type: http
+  seq: 33
+}
+
+get {
+  url: {{baseUrl}}/contributions
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}

@@ -1,0 +1,28 @@
+meta {
+  name: Commit contribution
+  type: http
+  seq: 31
+}
+
+post {
+  url: {{baseUrl}}/contributions/commit
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "cycle_id": "{{cycle_id}}",
+    "property_id": "{{property_id}}",
+    "level": "basic",
+    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}
