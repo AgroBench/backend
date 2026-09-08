@@ -36,6 +36,31 @@ type PanelBlocked struct {
 	Message         string `json:"message"`
 	CyclesValidated int    `json:"cycles_validated"`
 	CyclesRequired  int    `json:"cycles_required"`
+	err             error
+}
+
+func (e *PanelBlocked) Error() string {
+	if e.err != nil {
+		return e.err.Error()
+	}
+	return e.Message
+}
+
+func (e *PanelBlocked) Unwrap() error { return e.err }
+
+func NewPanelBlocked(n, need int) *PanelBlocked {
+	return newPanelBlocked("benchmark.Me", n, need)
+}
+
+func newPanelBlocked(op string, n, need int) *PanelBlocked {
+	return &PanelBlocked{
+		Code:            "FORBIDDEN",
+		Message:         "Painel bloqueado",
+		CyclesValidated: n,
+		CyclesRequired:  need,
+		err: apperrors.Forbidden(op, errors.New("not enough")).WithDetail(
+			"painel bloqueado: " + strconv.Itoa(n) + "/" + strconv.Itoa(need) + " ciclos consecutivos"),
+	}
 }
 
 type Me struct{ db *sqlx.DB }
@@ -62,8 +87,7 @@ func (u *Me) Execute(ctx context.Context, userID, cycleID uuid.UUID) (ProducerPa
 		need = 3
 	}
 	if n < need {
-		return ProducerPanel{}, apperrors.Forbidden(op, errors.New("not enough")).WithDetail(
-			"painel bloqueado: " + strconv.Itoa(n) + "/" + strconv.Itoa(need) + " ciclos consecutivos")
+		return ProducerPanel{}, newPanelBlocked(op, n, need)
 	}
 	var rows []struct {
 		Metric string  `db:"metric"`
@@ -97,7 +121,7 @@ type InstitutionReport struct {
 	Metrics []MetricPoint `json:"metrics"`
 }
 
-func (u *Report) Execute(ctx context.Context, institutionID, cycleID uuid.UUID) (InstitutionReport, error) {
+func (u *Report) Execute(ctx context.Context, userID, cycleID uuid.UUID) (InstitutionReport, error) {
 	const op = "benchmark.Report"
 	var rows []struct {
 		Metric string  `db:"metric"`
@@ -118,11 +142,18 @@ func (u *Report) Execute(ctx context.Context, institutionID, cycleID uuid.UUID) 
 	for _, r := range rows {
 		out.Metrics = append(out.Metrics, MetricPoint{r.Level + ":" + r.Metric, r.Mean, r.Median, r.P25, r.P75, r.N})
 	}
-	_, _ = u.db.ExecContext(ctx, `
-		INSERT INTO report_access (id, institution_id, subscription_id, cycle_id, accessed_at)
-		SELECT $1, $2, s.id, $3, now()
-		  FROM subscriptions s
-		 WHERE s.institution_id = $2 AND s.status = 'active'
-		 ORDER BY s.period_end DESC LIMIT 1`, coredomain.NewID(), institutionID, cycleID)
+	if _, err = u.db.ExecContext(ctx, insertReportAccessSQL, coredomain.NewID(), userID, cycleID); err != nil {
+		return InstitutionReport{}, apperrors.FromDBError(op, err)
+	}
 	return out, nil
 }
+
+// insertReportAccessSQL resolve institutions.id via users.id (JWT sub).
+// $1 = access id, $2 = users.id, $3 = cycle_id.
+const insertReportAccessSQL = `
+		INSERT INTO report_access (id, institution_id, subscription_id, cycle_id, accessed_at)
+		SELECT $1, i.id, s.id, $3, now()
+		  FROM institutions i
+		  JOIN subscriptions s ON s.institution_id = i.id AND s.status = 'active'
+		 WHERE i.user_id = $2
+		 ORDER BY s.period_end DESC LIMIT 1`

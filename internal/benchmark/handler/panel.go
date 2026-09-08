@@ -27,25 +27,37 @@ func (h *Me) Handle(w http.ResponseWriter, r *http.Request) {
 	out, err := h.uc.Execute(r.Context(), auth.UserID(r.Context()), cycleID)
 	if err != nil {
 		if apperrors.Is(err, apperrors.ErrForbidden) {
-			need := viper.GetInt("benchmark.free_after_cycles")
-			if need <= 0 {
-				need = 3
-			}
-			detail := ""
-			var app *apperrors.AppError
-			if errors.As(err, &app) {
-				detail = app.Detail
-			}
-			httpx.JSON(w, http.StatusForbidden, map[string]any{
-				"code": "FORBIDDEN", "message": "Painel bloqueado",
-				"detail": detail, "cycles_validated": 0, "cycles_required": need,
-			})
+			httpx.JSON(w, http.StatusForbidden, panelForbiddenJSON(err))
 			return
 		}
 		httpx.Error(w, r, err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+func panelForbiddenJSON(err error) map[string]any {
+	need := viper.GetInt("benchmark.free_after_cycles")
+	if need <= 0 {
+		need = 3
+	}
+	cyclesValidated := 0
+	var blocked *usecase.PanelBlocked
+	if errors.As(err, &blocked) {
+		cyclesValidated = blocked.CyclesValidated
+		if blocked.CyclesRequired > 0 {
+			need = blocked.CyclesRequired
+		}
+	}
+	detail := ""
+	var app *apperrors.AppError
+	if errors.As(err, &app) {
+		detail = app.Detail
+	}
+	return map[string]any{
+		"code": "FORBIDDEN", "message": "Painel bloqueado",
+		"detail": detail, "cycles_validated": cyclesValidated, "cycles_required": need,
+	}
 }
 
 type Report struct{ uc *usecase.Report }
