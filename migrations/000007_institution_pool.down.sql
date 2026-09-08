@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS payouts;
+DROP TABLE IF EXISTS pool_periods;
+DROP TABLE IF EXISTS payments;
+DROP TABLE IF EXISTS report_access;
+DROP TABLE IF EXISTS subscriptions;
+DROP TABLE IF EXISTS institutions;

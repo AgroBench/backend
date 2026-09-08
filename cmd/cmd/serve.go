@@ -7,11 +7,16 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/riverqueue/river"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	aggWorker "github.com/AgroBench/backend/internal/aggregation/worker"
+	poolWorker "github.com/AgroBench/backend/internal/pool/worker"
+	"github.com/AgroBench/backend/internal/validation/worker"
 	"github.com/AgroBench/backend/migrations"
 	"github.com/AgroBench/backend/pkg/adapter/database"
+	"github.com/AgroBench/backend/pkg/adapter/queue"
 	"github.com/AgroBench/backend/pkg/adapter/registry"
 	"github.com/AgroBench/backend/pkg/adapter/rest"
 )
@@ -41,6 +46,17 @@ var serveCmd = &cobra.Command{
 			return err
 		}
 
-		return rest.Serve(ctx, db, adapters)
+		workers := river.NewWorkers()
+		river.AddWorker(workers, worker.NewValidate(db, adapters.Enclave, adapters.Chain, adapters.RefData))
+		river.AddWorker(workers, aggWorker.NewAggregate(db))
+		river.AddWorker(workers, poolWorker.NewDistribute(db, adapters.Chain))
+
+		q, err := queue.Start(ctx, workers)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = q.Stop(context.Background()) }()
+
+		return rest.Serve(ctx, db, adapters, q)
 	},
 }
