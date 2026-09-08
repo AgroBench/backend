@@ -313,7 +313,8 @@ ciphertext), chave privada da wallet (só blob cifrado pelo app).
 ## 7. Endpoints
 
 Prefixo `/api/v1`. Auth via `Authorization: Bearer <jwt>`. Roles: `producer`, `institution`,
-`admin`. Coleção Bruno em `docs/bruno/`.
+`admin`. Coleção Bruno em `docs/bruno/`. Contrato de consumo HTTP para o app:
+[docs/frontend-api.md](docs/frontend-api.md).
 
 **identity**
 - `POST /auth/register` — email, phone, cpf, password → cria user + dispara OTP
