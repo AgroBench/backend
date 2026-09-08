@@ -7,12 +7,17 @@ services:
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
       PORT: ${PORT:-8080}
       DATABASE_URL: postgres://agrobench:agrobench@db:5432/agrobench?sslmode=disable
       CONFIG_FILE: config/env/config.dev.json
+      AUTH_PEPPER: ${AUTH_PEPPER}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ENCLAVE_MOCK_BOX_PRIVATE_KEY: ${ENCLAVE_MOCK_BOX_PRIVATE_KEY:-}
+      ENCLAVE_MOCK_SIGNING_PRIVATE_SEED: ${ENCLAVE_MOCK_SIGNING_PRIVATE_SEED:-}
     volumes:
       - .:/api
       - go-mod-cache:/go/pkg/mod
