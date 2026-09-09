@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -21,10 +23,17 @@ import (
 )
 
 type Institution struct {
-	ID     uuid.UUID `json:"id" db:"id"`
-	UserID uuid.UUID `json:"-" db:"user_id"`
-	Name   string    `json:"name" db:"name"`
-	Status string    `json:"status" db:"status"`
+	ID           uuid.UUID     `json:"id" db:"id"`
+	UserID       uuid.UUID     `json:"-" db:"user_id"`
+	Name         string        `json:"name" db:"name"`
+	Status       string        `json:"status" db:"status"`
+	Subscription *Subscription `json:"subscription,omitempty" db:"-"`
+}
+
+type Subscription struct {
+	Plan    string      `json:"plan"`
+	Regions []uuid.UUID `json:"regions"`
+	Status  string      `json:"status"`
 }
 
 type RegisterInput struct {
@@ -85,7 +94,37 @@ func (u *Me) Execute(ctx context.Context, userID uuid.UUID) (Institution, error)
 	if err != nil {
 		return Institution{}, apperrors.NotFound("institution.Me", err).WithDetail("instituição não encontrada")
 	}
+	sub, err := loadActiveSubscription(ctx, u.db, inst.ID)
+	if err != nil {
+		return Institution{}, err
+	}
+	inst.Subscription = sub
 	return inst, nil
+}
+
+func loadActiveSubscription(ctx context.Context, db *sqlx.DB, institutionID uuid.UUID) (*Subscription, error) {
+	var row struct {
+		Plan    string          `db:"plan"`
+		Status  string          `db:"status"`
+		Regions json.RawMessage `db:"regions"`
+	}
+	err := sqlx.GetContext(ctx, db, &row, `
+		SELECT plan, status, COALESCE(to_json(regions), '[]'::json) AS regions
+		  FROM subscriptions
+		 WHERE institution_id = $1 AND status = 'active'
+		 ORDER BY period_end DESC
+		 LIMIT 1`, institutionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, apperrors.FromDBError("institution.Me", err)
+	}
+	sub := &Subscription{Plan: row.Plan, Status: row.Status, Regions: []uuid.UUID{}}
+	if len(row.Regions) > 0 {
+		_ = json.Unmarshal(row.Regions, &sub.Regions)
+	}
+	return sub, nil
 }
 
 type Decide struct{ db *sqlx.DB }
