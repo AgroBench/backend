@@ -16,6 +16,7 @@ type WalletRepo interface {
 	Create(ctx context.Context, w walletdomain.Wallet) error
 	GetByUserID(ctx context.Context, userID uuid.UUID) (walletdomain.Wallet, error)
 	GetByID(ctx context.Context, id uuid.UUID) (walletdomain.Wallet, error)
+	ClaimPlaceholder(ctx context.Context, userID uuid.UUID, pubkey string, blob []byte, version int) (walletdomain.Wallet, error)
 	MarkExported(ctx context.Context, id uuid.UUID) error
 	SumRewards(ctx context.Context, walletID uuid.UUID) (domain.MicroUSDC, error)
 }

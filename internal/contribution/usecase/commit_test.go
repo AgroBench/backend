@@ -223,6 +223,12 @@ func (s *stubWallets) GetByUserID(context.Context, uuid.UUID) (walletdomain.Wall
 func (s *stubWallets) GetByID(context.Context, uuid.UUID) (walletdomain.Wallet, error) {
 	return s.w, nil
 }
+func (s *stubWallets) ClaimPlaceholder(_ context.Context, _ uuid.UUID, pubkey string, blob []byte, version int) (walletdomain.Wallet, error) {
+	s.w.Pubkey = pubkey
+	s.w.EncryptedBlob = blob
+	s.w.BlobVersion = version
+	return s.w, nil
+}
 func (s *stubWallets) MarkExported(context.Context, uuid.UUID) error { return nil }
 func (s *stubWallets) SumRewards(context.Context, uuid.UUID) (coredomain.MicroUSDC, error) {
 	return 0, nil

@@ -53,6 +53,27 @@ func (r *WalletRepo) GetByUserID(ctx context.Context, userID uuid.UUID) (domain.
 	return r.get(ctx, "wallet.GetByUserID", `SELECT id, user_id, pubkey, encrypted_blob, blob_version, exported_at, created_at, updated_at FROM wallets WHERE user_id = $1`, userID)
 }
 
+// ClaimPlaceholder troca pubkey+blob de uma wallet dummy da seed (blob curto, ex. "demo").
+// Wallet real (secretbox nacl) não é tocada — retorna NOT_FOUND.
+func (r *WalletRepo) ClaimPlaceholder(ctx context.Context, userID uuid.UUID, pubkey string, blob []byte, version int) (domain.Wallet, error) {
+	const op = "wallet.ClaimPlaceholder"
+	var rec row
+	err := sqlx.GetContext(ctx, r.db, &rec, `
+		UPDATE wallets
+		   SET pubkey = $2, encrypted_blob = $3, blob_version = $4, updated_at = now()
+		 WHERE user_id = $1
+		   AND octet_length(encrypted_blob) < 32
+		RETURNING id, user_id, pubkey, encrypted_blob, blob_version, exported_at, created_at, updated_at`,
+		userID, pubkey, blob, version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Wallet{}, apperrors.NotFound(op, err).WithDetail("wallet não é placeholder")
+	}
+	if err != nil {
+		return domain.Wallet{}, apperrors.FromDBError(op, err)
+	}
+	return rec.toDomain(), nil
+}
+
 func (r *WalletRepo) GetByID(ctx context.Context, id uuid.UUID) (domain.Wallet, error) {
 	return r.get(ctx, "wallet.GetByID", `SELECT id, user_id, pubkey, encrypted_blob, blob_version, exported_at, created_at, updated_at FROM wallets WHERE id = $1`, id)
 }

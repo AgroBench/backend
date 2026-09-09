@@ -41,10 +41,17 @@ func (u *Create) Execute(ctx context.Context, userID uuid.UUID, in input.CreateW
 		BlobVersion:   in.BlobVersion,
 	}
 	if err := u.repo.Create(ctx, w); err != nil {
-		if apperrors.Is(err, apperrors.ErrConflict) {
-			return output.Wallet{}, apperrors.Conflict(op, err).WithDetail("wallet já cadastrada")
+		if !apperrors.Is(err, apperrors.ErrConflict) {
+			return output.Wallet{}, err
 		}
-		return output.Wallet{}, err
+		claimed, claimErr := u.repo.ClaimPlaceholder(ctx, userID, in.Pubkey, blob, in.BlobVersion)
+		if claimErr != nil {
+			if apperrors.Is(claimErr, apperrors.ErrNotFound) {
+				return output.Wallet{}, apperrors.Conflict(op, err).WithDetail("wallet já cadastrada")
+			}
+			return output.Wallet{}, claimErr
+		}
+		return u.toOutput(ctx, claimed)
 	}
 	return u.toOutput(ctx, w)
 }
