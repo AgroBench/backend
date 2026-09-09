@@ -1,10 +1,11 @@
 .PHONY: help dev dev-d down down-v logs sh build build-image run \
         migrate-up migrate-down migrate-version migrate-create \
-        seed seed-demo test test-integration lint tidy fmt
+        seed seed-demo reset-db test test-integration lint tidy fmt
 
 APP        := agrobench
 COMPOSE    := docker compose
-API        := $(COMPOSE) exec api
+API        := docker exec agrobench-api
+DB         := docker exec agrobench-db
 DB_URL_DEV := postgres://agrobench:agrobench@localhost:5432/agrobench?sslmode=disable
 
 help: ## Lista os targets
@@ -59,6 +60,13 @@ seed: ## Dados base (regiões, culturas, admin) — fase 3
 
 seed-demo: ## Dados da demo do pitch — fase 7
 	$(API) go run ./cmd seed --demo
+
+reset-db: ## Dropa o banco, recria, migrate up e seed-demo
+	$(DB) psql -U agrobench -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS agrobench WITH (FORCE);"
+	$(DB) psql -U agrobench -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE agrobench OWNER agrobench;"
+	$(API) go run ./cmd migrate up
+	$(API) go run ./cmd seed --demo
+	docker restart agrobench-api
 
 ## ---- qualidade ----
 test: ## Testes unitários
