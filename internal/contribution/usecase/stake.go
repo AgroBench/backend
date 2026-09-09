@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -40,6 +41,9 @@ func (u *LockTx) Execute(ctx context.Context, userID uuid.UUID, in input.LockSta
 		return UnsignedTx{}, err
 	}
 	amount := domainMicro(in.Amount)
+	if err := requireStakeBalance(ctx, op, u.chain, wallet.Pubkey, amount); err != nil {
+		return UnsignedTx{}, err
+	}
 	tx, err := u.chain.BuildLockStakeTx(ctx, port.StakeRequest{
 		Wallet: port.Account(wallet.Pubkey), Amount: amount,
 	})
@@ -62,7 +66,7 @@ func (u *LockSubmit) Execute(ctx context.Context, in input.SubmitSignedTx) (Subm
 		if errors.Is(err, port.ErrNeedsCoSign) {
 			return SubmittedTx{}, apperrors.Validation(op, err).WithDetail("tx sem assinatura do produtor")
 		}
-		return SubmittedTx{}, apperrors.External(op, 0, err).WithDetail("falha ao enviar lock de stake")
+		return SubmittedTx{}, apperrors.External(op, 0, err).WithDetail(stakeChainDetail(err, "falha ao enviar lock de stake"))
 	}
 	return SubmittedTx{Signature: string(ref)}, nil
 }
@@ -149,6 +153,30 @@ func loadLockedOwnStake(ctx context.Context, op string, repo contract.Repo, wall
 		return cdomain.Stake{}, "", apperrors.Conflict(op, errors.New("stake")).WithDetail("stake não está travado")
 	}
 	return st, wallet.Pubkey, nil
+}
+
+func requireStakeBalance(ctx context.Context, op string, chain port.ChainClient, pubkey string, amount coredomain.MicroUSDC) error {
+	if chain == nil || amount <= 0 {
+		return nil
+	}
+	bal, err := chain.Balance(ctx, port.Account(pubkey))
+	if err != nil {
+		return apperrors.External(op, 0, err).WithDetail("falha ao consultar saldo USDC")
+	}
+	if bal < amount {
+		return apperrors.Validation(op, errors.New("insufficient")).WithDetail(
+			"saldo insuficiente para o lock de stake (carteira " + pubkey + " precisa de ≥10 USDC na Devnet)",
+		)
+	}
+	return nil
+}
+
+func stakeChainDetail(err error, fallback string) string {
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "accountnotinitialized") || strings.Contains(msg, "producer_ata") || strings.Contains(msg, "insufficient") {
+		return "saldo insuficiente para o lock de stake"
+	}
+	return fallback
 }
 
 func domainMicro(amount int64) coredomain.MicroUSDC {
