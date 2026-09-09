@@ -26,6 +26,17 @@ func Load(path string) error {
 	viper.SetConfigType("json")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
+	for _, key := range []string{
+		"adapters.chain",
+		"chain.solana.rpc_url",
+		"chain.solana.treasury_private_key",
+		"chain.solana.usdc_mint",
+		"chain.solana.pool_pubkey",
+		"chain.solana.program_id",
+		"chain.solana.confirm_timeout_seconds",
+	} {
+		_ = viper.BindEnv(key)
+	}
 
 	if err := viper.ReadInConfig(); err != nil {
 		return fmt.Errorf("lendo %s: %w", path, err)

@@ -102,9 +102,14 @@ func buildChain(db *sqlx.DB) (port.ChainClient, *chainMock.Chain, error) {
 			TreasuryPrivateKey: viper.GetString("chain.solana.treasury_private_key"),
 			USDCMint:           viper.GetString("chain.solana.usdc_mint"),
 			PoolPubkey:         viper.GetString("chain.solana.pool_pubkey"),
+			ProgramID:          viper.GetString("chain.solana.program_id"),
 			ConfirmTimeout:     seconds("chain.solana.confirm_timeout_seconds"),
 		})
-		return c, nil, err
+		if err != nil {
+			return nil, nil, err
+		}
+		slog.Info("chain solana", "program_id", c.ProgramID(), "pool", c.Pool(), "treasury", c.Treasury())
+		return c, nil, nil
 	default:
 		return nil, nil, unknown("chain", impl)
 	}

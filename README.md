@@ -78,7 +78,7 @@ ignorando `dev/`, `docs/`, `migrations/`, `seeds/`.
 
 | Tema | Decisão |
 |---|---|
-| Escopo | MVP para demo de banca. Solana, TEE, SICAR, CONAB, SMS e pagamento **simulados via ports**, com adapter **real semi-pronto** ao lado de cada mock |
+| Escopo | MVP para demo de banca. **Solana Devnet está ativa** (Memo + USDC-SPL). TEE, SICAR, CONAB, SMS e pagamento seguem mock; adapters reais ao lado |
 | Linguagem / versão | Go 1.26 (módulo `github.com/AgroBench/backend`) |
 | Idioma | Identificadores, tabelas, rotas e JSON em **inglês**. Comentários, docs e mensagens de erro em português |
 | Layout do repo | Monorepo: `AgroBench/backend/` com `go.mod`, `Makefile` e `docker-compose.yaml` próprios |
@@ -93,7 +93,7 @@ ignorando `dev/`, `docs/`, `migrations/`, `seeds/`.
 | Wallet | App gera a keypair; backend guarda só `pubkey` + blob cifrado para recuperação. Backend **nunca** vê a chave privada |
 | Cripto do payload | NaCl sealed box (x25519 + XSalsa20-Poly1305). Commit = SHA-256 do JSON canônico |
 | TEE real | AWS Nitro Enclaves (host via vsock + attestation document). Binário do enclave em `cmd/enclave` |
-| Chain real | Solana devnet via `gagliardetto/solana-go`. Commit/atestação no Memo program; recompensa via transferência USDC-SPL da treasury |
+| Chain | **Ativa na Devnet.** Solana via `gagliardetto/solana-go` + programa Anchor `agrobench` (`EytN8UaXrfTQc6Pq4AdQbQyJwUX37ddXsV7URayBBLrN`). Commit/atestação/CAR em Memo; stake (`lock_stake`/`release_stake`), crédito e split do pool on-chain; recompensa USDC-SPL da treasury. |
 | Pagamento real | Stripe (`stripe-go`, checkout + webhook) semi-pronto |
 | Ciclo | Ciclo = safra por cultura × região, aberto/fechado pelo admin. Fechamento dispara agregação. Split do pool é job mensal independente |
 | Contribuição | 1 por wallet por ciclo. Rejeitada permite **1 nova tentativa** no mesmo ciclo; stake fica travado até a nova validação |
@@ -218,12 +218,13 @@ Módulos que são só job (validation, aggregation, pool split) têm `worker/` n
 
 Toda dependência externa tem uma interface em `pkg/port` e **duas** implementações. O que está
 ativo é decidido em `config.dev.json` → `adapters.*` e aparece no log do boot
-(`adapter selecionado ... mock=true`). No pitch tudo roda em `mock`.
+(`adapter selecionado ... mock=true|false`). Na demo, **só a chain é real** (Solana Devnet);
+o resto permanece `mock`.
 
 ```
 pkg/port/<nome>.go                          ← interface + comentário obrigatório
-pkg/adapter/<nome>/mock/<nome>.go           ← ATIVO NO PITCH
-pkg/adapter/<nome>/<real>/<nome>.go         ← integração real, semi-pronta
+pkg/adapter/<nome>/mock/<nome>.go           ← testes / ports ainda mock (enclave, SICAR, …)
+pkg/adapter/<nome>/<real>/<nome>.go         ← integração real (chain = solana, ativa)
 ```
 
 Comentário obrigatório no topo de cada interface:
@@ -232,10 +233,8 @@ Comentário obrigatório no topo de cada interface:
 // ChainClient abstrai a blockchain Solana.
 //
 // Implementações:
-//   - pkg/adapter/chain/mock   → ATIVA NO PITCH. Grava commits/atestações na tabela
-//                                mock_chain_events e simula transferências USDC no Postgres.
-//   - pkg/adapter/chain/solana → REAL. Devnet via gagliardetto/solana-go. Commit e
-//                                atestação no Memo program, USDC-SPL via token program.
+//   - pkg/adapter/chain/mock   → testes e seed-demo (Postgres).
+//   - pkg/adapter/chain/solana → ATIVA NA DEMO. Devnet via gagliardetto/solana-go.
 //
 // A seleção é feita em pkg/adapter/registry pela config `adapters.chain` (mock|solana).
 type ChainClient interface { ... }
@@ -245,14 +244,14 @@ type ChainClient interface { ... }
 
 ```json
 "adapters": {
-  "chain": "mock", "enclave": "mock", "sicar": "mock",
+  "chain": "solana", "enclave": "mock", "sicar": "mock",
   "reference_data": "mock", "sms": "mock", "payment": "mock"
 }
 ```
 
-| Port | Métodos principais | Mock (ativo no pitch) | Real |
+| Port | Métodos principais | Mock | Real (demo) |
 |---|---|---|---|
-| `ChainClient` | `Commit`, `Attest`, `RecordCARVerification`, `TransferUSDC`, `LockStake / ReleaseStake`, `Balance`, `Treasury()`, `Pool()` | `mock_chain_events` + `mock_chain_balances` + `mock_chain_stakes` no Postgres, tx id determinístico por conteúdo. `Mint()` só no mock, para seeds | Solana devnet: Memo program pra commit/atestação/CAR, SPL token transfer da treasury (cria ATA se preciso). `LockStake/ReleaseStake` = `ErrNotImplemented` (exigem assinatura do produtor) |
+| `ChainClient` | `Commit`, `Attest`, `RecordCARVerification`, `TransferUSDC`, `LockStake / ReleaseStake`, `Balance`, `Treasury()`, `Pool()`, `InitializeProgram` | Postgres (`mock_chain_*`). Só nos testes | **Ativa.** Devnet: Memo pra commit/atestação/CAR; programa Anchor pra lock/release/credit/distribute (USDC na PDA); USDC-SPL da treasury (cria ATA se preciso). Fallback Memo só se `CHAIN_SOLANA_PROGRAM_ID` estiver vazio |
 | `Enclave` | `Identity()`, `Validate(req) → Verdict assinado` | Decifra em processo com x25519 da config (ou gerada no boot), assina veredito com ed25519. Motor de regras em `internal/core/validate`, o MESMO do enclave real | Host fala com `cmd/enclave` via vsock; verifica attestation document (COSE_Sign1 ES384, cadeia até a raiz AWS, PCRs, user_data = chaves públicas) antes de confiar. `cmd/enclave` gera chaves em memória e pede atestação ao NSM |
 | `SicarClient` | `Lookup(car) → {exists, active, uf, ibge}` | Tabela seed `mock_sicar_cars` | Client HTTP com `pathTemplate` e `apiResponse` placeholders — `TODO(sicar)` no endpoint |
 | `ReferenceDataClient` | `ExpectedRanges(culture, ibge) → [{metric, min, max}]` | Tabela seed `mock_reference_ranges` | Client HTTP CONAB convertendo média ± tolerância em faixa — `TODO(conab)` no endpoint |
@@ -361,7 +360,7 @@ Prefixo `/api/v1`. Auth via `Authorization: Bearer <jwt>`. Roles: `producer`, `i
 - `GET /wallet/payouts` (producer)
 
 **admin (demo)**
-- `POST /admin/seed/demo` — cria produtores, ciclos e contribuições fake pra popular o painel
+- `POST /admin/seed/demo` — seed da banca: logins oficiais, agricultores extras (média), ciclos e Cotrijal
 - `GET /admin/otp/{user_id}` — último OTP pendente. **Só existe quando `adapters.sms = mock`**
 - `POST /admin/jobs/run/{kind}` — dispara qualquer job manualmente
 
@@ -458,8 +457,8 @@ Blocos principais: `server.http`, `database`, `log`, `adapters` (§5), `auth`, e
 `plans.national.price_usdc`. Cada adapter real tem seu próprio bloco (`chain.solana`,
 `enclave.nitro`, `sicar.http`, `reference_data.conab`, `sms.twilio`, `payment.stripe`).
 
-**Segredos ficam só no `.env`, nunca no json**: `DATABASE_URL`, `JWT_SECRET`, `AUTH_PEPPER`,
-`ENCLAVE_PRIVATE_KEY` (mock), `SOLANA_TREASURY_KEY`, `STRIPE_*`, `TWILIO_*`,
+**Segredos ficam só no `.env`, nunca no json**: `DATABASE_URL`, `AUTH_JWT_SECRET`, `AUTH_PEPPER`,
+`CHAIN_SOLANA_TREASURY_PRIVATE_KEY`, `ENCLAVE_MOCK_*`, `STRIPE_*`, `TWILIO_*`,
 `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Ver `.env.example`.
 
 ---
@@ -478,14 +477,12 @@ Blocos principais: `server.http`, `database`, `log`, `adapters` (§5), `auth`, e
 ## 13. Seeds
 
 - `micro_regions`: as 35 microrregiões IBGE do RS (código IBGE de 5 dígitos + nome + UF).
-  Passo Fundo é a região da demo
+  Passo Fundo é a praça do agricultor oficial da demo; a seed rica cobre outras microrregiões do planalto e da serra
 - `cultures`: soja, milho, trigo
-- `mock_reference_ranges` (CONAB): faixas de custo/ha e produtividade só para Passo Fundo × 3 culturas
-- `mock_sicar_cars` (SICAR): ~20 CARs fictícios válidos em Passo Fundo, alguns inativos para
-  testar rejeição
+- `mock_reference_ranges` (CONAB): faixas de custo/ha e produtividade para as 35 microrregiões × 3 culturas
+- `mock_sicar_cars` (SICAR): ~20 CARs fictícios em Passo Fundo (1–17 ativos, 18–20 inativos) + CARs dos agricultores extras (`…0100` em diante)
 - `users`: 1 admin (`ADMIN_EMAIL`/`ADMIN_PASSWORD` do `.env`)
-- `seed-demo`: 14 produtores em Passo Fundo × soja, 3 ciclos fechados e agregados, 1 instituição
-  aprovada com plano regional, alguns `report_access`, 1 pool distribuído
+- `seed-demo`: 3 logins oficiais + ~33 agricultores extras (emails `seed.farmer.NN@agrobench.local`, senha dummy, wallets **off-chain** só para média). Produtor oficial `produtor@agrobench.local` com pubkey Devnet `FXsin7…jpzf3` em Passo Fundo × soja (3 ciclos agregados + janela `2026/27` aberta). Instituição: Cotrijal (plano regional, 5 microrregiões). Não cria `produtor01`–`14`.
 
 ---
 
@@ -506,10 +503,12 @@ x25519 vive no processo da API. O operador da infra **pode** ler o payload. A se
 responsabilidades (quem decifra × quem agrega) está preservada na arquitetura, mas não na
 garantia — é exatamente isso que o adapter `nitro` resolve.
 
-**3. Adapters reais são semi-prontos.** Solana devnet, Stripe test mode e Nitro compilam e
-seguem a API das libs, mas não foram executados contra o ambiente real dentro do escopo do MVP.
-`LockStake`/`ReleaseStake` no adapter Solana retornam `ErrNotImplemented`: exigem assinatura do
-produtor e a chave privada nunca chega ao backend.
+**3. Chain na Devnet; o resto ainda é mock.** Solana está ativa (`adapters.chain=solana`):
+Memo + USDC-SPL da treasury, conferido contra a Devnet. `LockStake`/`ReleaseStake` são Memo
+(não travam USDC do produtor — a chave privada nunca chega ao backend). Stripe e Nitro
+compilam, mas não estão ligados na demo. O produtor oficial (`produtor@agrobench.local`) tem
+pubkey Devnet real. Agricultores extras da seed (`seed.farmer.NN`) têm pubkey off-chain só
+para média: `GET /wallet` nessas contas falha/zera na Devnet — não são logins da banca.
 
 **4. Endpoints públicos do SICAR e da CONAB não foram levantados.** Os adapters reais nascem com
 client HTTP, structs de resposta e `// TODO(sicar)` / `// TODO(conab)` no lugar da URL.

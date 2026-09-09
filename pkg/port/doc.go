@@ -2,8 +2,8 @@
 //
 // Cada port tem DUAS implementações em pkg/adapter/<nome>/:
 //
-//	mock/  → ATIVA NO PITCH. Simula o serviço no Postgres/memória. Nunca sai do ambiente local.
-//	<real>/ → integração real, semi-pronta, sem teste em ambiente real dentro do escopo do MVP.
+//	mock/  → default da demo para enclave, SICAR, CONAB, SMS e pagamento.
+//	<real>/ → integração real. A chain (solana) está ATIVA na demo (Devnet).
 //
 // A seleção é feita por config (`adapters.<nome>` = mock | <real>) em pkg/adapter/registry.
 // O comentário no topo de cada interface diz qual é qual.

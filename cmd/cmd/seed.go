@@ -19,7 +19,7 @@ var seedCmd = &cobra.Command{
 	Use:   "seed",
 	Short: "Carrega dados base (regiões, culturas, admin). Use --demo para o conjunto da banca.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
 		db, err := database.Connect(ctx)

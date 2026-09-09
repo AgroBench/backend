@@ -1,0 +1,15 @@
+meta {
+  name: Release stake tx
+  type: http
+  seq: 33
+}
+
+post {
+  url: {{baseUrl}}/contributions/{{contribution_id}}/release-stake/tx
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}

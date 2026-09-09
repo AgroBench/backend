@@ -170,6 +170,34 @@ func (r *Repo) GetLockedStakeByWallet(ctx context.Context, walletID uuid.UUID) (
 	return domain.Stake{ID: s.ID, ContributionID: s.ContributionID, AmountUSDC: s.AmountUSDC, LockTx: s.LockTx, Status: domain.StakeStatus(s.Status)}, nil
 }
 
+func (r *Repo) GetStakeByContribution(ctx context.Context, contributionID uuid.UUID) (domain.Stake, error) {
+	var s struct {
+		ID             uuid.UUID `db:"id"`
+		ContributionID uuid.UUID `db:"contribution_id"`
+		AmountUSDC     float64   `db:"amount_usdc"`
+		LockTx         string    `db:"lock_tx"`
+		ReleaseTx      *string   `db:"release_tx"`
+		Status         string    `db:"status"`
+	}
+	err := sqlx.GetContext(ctx, r.db, &s, `
+		SELECT id, contribution_id, amount_usdc, lock_tx, release_tx, status
+		  FROM stakes WHERE contribution_id = $1`, contributionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Stake{}, apperrors.NotFound("contribution.GetStake", err).WithDetail("stake não encontrado")
+	}
+	if err != nil {
+		return domain.Stake{}, apperrors.FromDBError("contribution.GetStake", err)
+	}
+	rel := ""
+	if s.ReleaseTx != nil {
+		rel = *s.ReleaseTx
+	}
+	return domain.Stake{
+		ID: s.ID, ContributionID: s.ContributionID, AmountUSDC: s.AmountUSDC,
+		LockTx: s.LockTx, ReleaseTx: rel, Status: domain.StakeStatus(s.Status),
+	}, nil
+}
+
 func (r *Repo) ReleaseStake(ctx context.Context, id uuid.UUID, tx string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE stakes SET status = 'released', release_tx = $2 WHERE id = $1`, id, tx)
 	if err != nil {

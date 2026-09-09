@@ -23,7 +23,7 @@
     "format": "text"
   },
   "adapters": {
-    "chain": "mock",
+    "chain": "solana",
     "enclave": "mock",
     "sicar": "mock",
     "reference_data": "mock",
@@ -76,6 +76,7 @@
       "treasury_private_key": "",
       "usdc_mint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
       "pool_pubkey": "",
+      "program_id": "EytN8UaXrfTQc6Pq4AdQbQyJwUX37ddXsV7URayBBLrN",
       "confirm_timeout_seconds": 60
     }
   },

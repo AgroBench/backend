@@ -119,6 +119,14 @@ func (m *memRepo) UpdateStatus(context.Context, uuid.UUID, cdomain.Status, strin
 func (m *memRepo) GetLockedStakeByWallet(context.Context, uuid.UUID) (cdomain.Stake, error) {
 	return cdomain.Stake{}, nf()
 }
+func (m *memRepo) GetStakeByContribution(_ context.Context, contributionID uuid.UUID) (cdomain.Stake, error) {
+	for _, s := range m.stakes {
+		if s.ContributionID == contributionID {
+			return s, nil
+		}
+	}
+	return cdomain.Stake{}, nf()
+}
 func (m *memRepo) ReleaseStake(context.Context, uuid.UUID, string) error { return nil }
 func (m *memRepo) SaveVerdict(context.Context, cdomain.Verdict, []cdomain.ValidatedMetric) error {
 	return nil
@@ -169,6 +177,24 @@ func (f *fakeChain) Balance(context.Context, port.Account) (coredomain.MicroUSDC
 }
 func (f *fakeChain) Treasury() port.Account { return "treasury" }
 func (f *fakeChain) Pool() port.Account     { return "pool" }
+func (f *fakeChain) ProgramID() string      { return "" }
+func (f *fakeChain) BuildLockStakeTx(context.Context, port.StakeRequest) (string, error) {
+	return "mock-lock-tx", nil
+}
+func (f *fakeChain) BuildReleaseStakeTx(context.Context, port.StakeRequest) (string, error) {
+	return "mock-release-tx", nil
+}
+func (f *fakeChain) SubmitSignedTx(_ context.Context, _ string) (port.TxRef, error) {
+	f.log.add("lock")
+	return "lock-tx", nil
+}
+func (f *fakeChain) CreditPool(context.Context, coredomain.MicroUSDC, string) (port.TxRef, error) {
+	return "", nil
+}
+func (f *fakeChain) DistributePool(context.Context, []port.PoolPayout) (port.TxRef, error) {
+	return "", nil
+}
+func (f *fakeChain) InitializeProgram(context.Context) (port.TxRef, error) { return "", nil }
 
 type stubCycles struct{ c cycledomain.Cycle }
 
@@ -306,4 +332,35 @@ func TestCommitRejectsActiveDuplicate(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, apperrors.Is(err, apperrors.ErrConflict))
 	require.Equal(t, 1, out.Attempt)
+}
+
+func TestCommitWithStakeTxSkipsLockStake(t *testing.T) {
+	f := newFixture()
+	f.in.StakeTx = "already-locked-on-chain"
+	out, err := f.uc.Execute(context.Background(), f.userID, f.in)
+	require.NoError(t, err)
+	require.Equal(t, 1, out.Attempt)
+	require.Equal(t, []string{"commit", "create", "create_stake"}, f.log.steps)
+	require.Len(t, f.repo.stakes, 1)
+	require.Empty(t, f.chain.lockedIDs)
+}
+
+func TestCommitWithSignedTxSubmitsThenSkipsLockStake(t *testing.T) {
+	f := newFixture()
+	f.in.SignedTx = "c2lnbmVkLXR4"
+	out, err := f.uc.Execute(context.Background(), f.userID, f.in)
+	require.NoError(t, err)
+	require.Equal(t, 1, out.Attempt)
+	require.Equal(t, []string{"lock", "commit", "create", "create_stake"}, f.log.steps)
+	require.Len(t, f.repo.stakes, 1)
+}
+
+func TestCommitAttempt1NeedsCoSignWithoutStakeTx(t *testing.T) {
+	f := newFixture()
+	f.chain.lockErr = port.ErrNeedsCoSign
+	_, err := f.uc.Execute(context.Background(), f.userID, f.in)
+	require.Error(t, err)
+	require.True(t, apperrors.Is(err, apperrors.ErrInvalidInput))
+	require.Empty(t, f.repo.contribs)
+	require.Empty(t, f.repo.stakes)
 }

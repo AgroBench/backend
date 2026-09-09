@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -145,6 +146,10 @@ func (w *Validate) Work(ctx context.Context, job *river.Job[queue.ValidateContri
 			})
 			if err == nil {
 				_ = repo.ReleaseStake(ctx, st.ID, string(rel))
+			} else if errors.Is(err, port.ErrNeedsCoSign) {
+				slog.Info("release de stake exige assinatura do produtor",
+					"contribution_id", st.ContributionID,
+					"hint", "POST /api/v1/contributions/{id}/release-stake/tx")
 			} else {
 				slog.Warn("falha ao liberar stake", "err", err)
 			}

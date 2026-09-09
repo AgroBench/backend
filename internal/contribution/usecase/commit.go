@@ -79,6 +79,29 @@ func (u *Commit) Execute(ctx context.Context, userID uuid.UUID, in input.Commit)
 		ID: coredomain.NewID(), CycleID: in.CycleID, WalletID: wallet.ID, PropertyID: in.PropertyID,
 		Level: level, Attempt: attempt, CommitHash: in.Hash, CommitAt: time.Now(), Status: cdomain.StatusCommitted,
 	}
+
+	var stakeLocked bool
+	var stakeReq port.StakeRequest
+	var lockTx port.TxRef
+	amount := viper.GetFloat64("stake.amount_usdc")
+	if amount <= 0 {
+		amount = 10
+	}
+	if attempt == 1 {
+		stakeReq = port.StakeRequest{
+			Wallet: port.Account(wallet.Pubkey), ContributionID: c.ID, Amount: coredomain.USDC(amount),
+		}
+		switch {
+		case in.SignedTx != "":
+			lockTx, err = u.chain.SubmitSignedTx(ctx, in.SignedTx)
+			if err != nil {
+				return output.Contribution{}, mapChainErr(op, err, "falha ao enviar lock de stake")
+			}
+		case in.StakeTx != "":
+			lockTx = port.TxRef(in.StakeTx)
+		}
+	}
+
 	tx, err := u.chain.Commit(ctx, port.CommitRequest{
 		Wallet: port.Account(wallet.Pubkey), ContributionID: c.ID, CycleID: in.CycleID, Hash: in.Hash,
 	})
@@ -87,8 +110,6 @@ func (u *Commit) Execute(ctx context.Context, userID uuid.UUID, in input.Commit)
 	}
 	c.CommitTx = string(tx)
 
-	var stakeLocked bool
-	var stakeReq port.StakeRequest
 	err = u.repo.WithTx(ctx, func(txRepo contract.Repo) error {
 		if err := txRepo.Create(ctx, c); err != nil {
 			return err
@@ -96,15 +117,14 @@ func (u *Commit) Execute(ctx context.Context, userID uuid.UUID, in input.Commit)
 		if attempt != 1 {
 			return nil
 		}
-		amount := viper.GetFloat64("stake.amount_usdc")
-		stakeReq = port.StakeRequest{
-			Wallet: port.Account(wallet.Pubkey), ContributionID: c.ID, Amount: coredomain.USDC(amount),
+		if lockTx == "" {
+			var err error
+			lockTx, err = u.chain.LockStake(ctx, stakeReq)
+			if err != nil {
+				return mapChainErr(op, err, "falha ao travar stake (saldo insuficiente?)")
+			}
+			stakeLocked = true
 		}
-		lockTx, err := u.chain.LockStake(ctx, stakeReq)
-		if err != nil {
-			return apperrors.External(op, 0, err).WithDetail("falha ao travar stake (saldo insuficiente?)")
-		}
-		stakeLocked = true
 		return txRepo.CreateStake(ctx, cdomain.Stake{
 			ID: coredomain.NewID(), ContributionID: c.ID, AmountUSDC: amount, LockTx: string(lockTx), Status: cdomain.StakeLocked,
 		})
@@ -118,6 +138,13 @@ func (u *Commit) Execute(ctx context.Context, userID uuid.UUID, in input.Commit)
 		return output.Contribution{}, err
 	}
 	return output.New(c), nil
+}
+
+func mapChainErr(op string, err error, detail string) error {
+	if errors.Is(err, port.ErrNeedsCoSign) {
+		return apperrors.Validation(op, err).WithDetail("assine o lock de stake antes do commit (POST /chain/stake/lock-tx)")
+	}
+	return apperrors.External(op, 0, err).WithDetail(detail)
 }
 
 type Reveal struct {

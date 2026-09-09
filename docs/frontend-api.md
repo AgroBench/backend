@@ -172,14 +172,15 @@ Token expirado: `401` `UNAUTHORIZED` `detail: "token expirado"`. Token lixo / MF
 | Conta | Email | Senha | Role | MFA |
 |---|---|---|---|---|
 | Admin (`.env` `ADMIN_EMAIL` / `ADMIN_PASSWORD`) | default `admin@agrobench.local` | default `admin123` | `admin` | não |
-| Demo produtores 01–14 | `produtor01@agrobench.local` … `produtor14@…` | `demo12345` | `producer` | **sim** |
+| Demo produtor | `produtor@agrobench.local` | `demo12345` | `producer` | **sim** — pubkey Devnet `FXsin7UZTGrix1cEe1QpMDFz3a8cDHzVK7h2oisjpzf3` |
 | Demo instituição | `instituicao@agrobench.local` | `demo12345` | `institution` | não |
 
-- 35 microrregiões IBGE do RS. Demo = Passo Fundo `ibge_code: "43010"`.
+- 35 microrregiões IBGE do RS. Demo oficial = Passo Fundo `ibge_code: "43010"`; seed rica também em Carazinho, Não-Me-Toque, Ijuí, Cruz Alta, Erechim, Santa Rosa, Vacaria, Santo Ângelo.
 - Culturas: `soybean` (Soja), `corn` (Milho), `wheat` (Trigo).
-- CARs mock (após `NormalizeIdentifier`): `RS-4314100-AAA` + 17 dígitos, `i=1..20`. `i<=17` ativos (aprovam); `i>=18` inativos (property nasce `rejected`). Ex. ativo: `RS-4314100-AAA00000000000000001`. O seed-demo **já vincula** CARs 1–14 aos 14 produtores — um cadastro novo deve usar 15–17 (ou 18–20 para testar rejeição).
-- Seed-demo: 3 ciclos **já `aggregated`** (`2023/24`, `2024/25`, `2025/26`), contribuições **já `accepted`**, painel do produtor demo já liberado. **Não dá para fazer commit nesses ciclos** (`status != open`). Para o fluxo commit-reveal ao vivo, o admin precisa **abrir um ciclo novo** com `opens_at` ≤ agora < `closes_at`.
-- Seed-demo **minta 100 USDC** nas wallets mock dos 14 produtores. Produtor criado via `POST /auth/register` + `POST /wallet` começa com **saldo 0**. Não há endpoint HTTP de mint. `POST /contributions/commit` na 1ª tentativa chama `LockStake(10 USDC)` e falha com `502` `EXTERNAL_DEPENDENCY_ERROR` `detail: "falha ao travar stake (saldo insuficiente?)"`. Para a demo de banca: use um `produtorNN` do seed **ou** aceite que o registro “limpo” não consegue stakar sem mint interno.
+- CARs mock (após `NormalizeIdentifier`): `RS-4314100-AAA` + 17 dígitos, `i=1..20`. `i<=17` ativos (aprovam); `i>=18` inativos (property nasce `rejected`). Ex. ativo: `RS-4314100-AAA00000000000000002`. O seed-demo vincula o CAR `…0001` ao produtor oficial. Agricultores extras usam `…0100` em diante (outros municípios) — **não** ocupam 2–17.
+- Seed-demo: 1 produtor oficial, pubkey Solana real `FXsin7UZTGrix1cEe1QpMDFz3a8cDHzVK7h2oisjpzf3`. `GET /wallet` lê saldo na Devnet. Agricultores extras (`seed.farmer.NN@agrobench.local`) têm pubkey off-chain só para média — não airdrop na Devnet. Não existem mais `produtor01`–`14`.
+- Seed-demo: ciclos históricos **já `aggregated`** (várias regiões × culturas) + janela **`2026/27` aberta** em Passo Fundo × soja para commit ao vivo. Instituição: Cotrijal, plano regional (5 microrregiões).
+- `LockStake` na Devnet, com programa, **debita** 10 USDC da ATA do produtor (vault PDA). Sem `CHAIN_SOLANA_PROGRAM_ID`, lock no commit ainda é Memo.
 
 ---
 
@@ -213,7 +214,11 @@ Paths abaixo já incluem `/api/v1`, exceto health. Auth: `público` = sem Bearer
 | `POST` | `/api/v1/admin/cycles/{id}/close` | Bearer `admin` | fecha + job aggregate |
 | `GET` | `/api/v1/enclave/public-key` | público | x25519 hex |
 | `POST` | `/api/v1/contributions/commit` | Bearer `producer` | commit + stake |
+| `POST` | `/api/v1/chain/stake/lock-tx` | Bearer `producer` | monta lock_stake (front assina) |
+| `POST` | `/api/v1/chain/stake/lock-submit` | Bearer `producer` | co-assina treasury e envia |
 | `POST` | `/api/v1/contributions/{id}/reveal` | Bearer `producer` | ciphertext + job validate |
+| `POST` | `/api/v1/contributions/{id}/release-stake/tx` | Bearer `producer` | monta release_stake (front assina) |
+| `POST` | `/api/v1/contributions/{id}/release-stake/submit` | Bearer `producer` | co-assina treasury e envia |
 | `GET` | `/api/v1/contributions` | Bearer `producer` | lista da wallet |
 | `GET` | `/api/v1/contributions/{id}` | Bearer `producer` | **não** checa dono |
 | `GET` | `/api/v1/benchmark/me` | Bearer `producer` | painel grátis |
@@ -229,6 +234,7 @@ Paths abaixo já incluem `/api/v1`, exceto health. Auth: `público` = sem Bearer
 | `GET` | `/api/v1/pool/periods/{month}` | público | `YYYY-MM` |
 | `POST` | `/api/v1/admin/pool/distribute` | Bearer `admin` | query `month` → 202 |
 | `POST` | `/api/v1/admin/seed/demo` | Bearer `admin` | seed banca |
+| `POST` | `/api/v1/admin/chain/initialize` | Bearer `admin` | `initialize` do programa (uma vez) |
 | `POST` | `/api/v1/admin/jobs/run/{kind}` | Bearer `admin` | só `distribute_pool` |
 
 **Não existem** (README ou types que o agente pode achar): `POST /wallet/export` (é GET), mint de USDC, listagem de payments, listagem de instituições, `RequireSubscription`, cron HTTP do pool, `GET /benchmark/report` com filtros `region`/`culture` (ignorados).
@@ -296,9 +302,9 @@ GET contribuição **não** devolve veredito interno, `checks`, ciphertext, nem 
 
 `locked` | `released`
 
-Release on-chain mock quando `ConsecutiveAccepted >= stake.release_after_cycles` (default **2**), mesma cultura × região, ordenado por `opens_at DESC`, parando no primeiro não-`accepted`. Rejeição zera a contagem.
+Release quando `ConsecutiveAccepted >= stake.release_after_cycles` (default **2**), mesma cultura × região, `opens_at DESC`, parando no primeiro não-`accepted`. Rejeição zera a contagem.
 
-Não há endpoint de stake. O app infere pelo fluxo (commit ok = locked na 1ª).
+Com `CHAIN_SOLANA_PROGRAM_ID`, o worker **não** libera (log `ErrNeedsCoSign`); o app chama `POST /contributions/{id}/release-stake/tx` + `.../submit`. Sem program id, `ReleaseStake` ainda é Memo da treasury. Lock na attempt 1: `POST /chain/stake/lock-tx` + `lock-submit` (ver §11), depois `stake_tx` no commit.
 
 ### 3.8 Institution `status`
 
@@ -680,7 +686,7 @@ Outra role → `403` `perfil insuficiente`. Sem Bearer → `401`.
 
 | Campo | Required | Regras |
 |---|---|---|
-| `pubkey` | sim | string 32–64. No mock é identificador da conta on-chain; pode ser base58-like. Unique global. |
+| `pubkey` | sim | string 32–64, **base58 Solana** (ed25519). Unique global. Pubkeys fake do seed-demo não servem na Devnet. |
 | `encrypted_blob` | sim | base64 std (decode falha → `400` `encrypted_blob deve ser base64`) |
 | `blob_version` | não | se `<1` ou omitido → **1** |
 
@@ -698,7 +704,7 @@ App gera keypair **no device**. Backend nunca vê a privada. 1 wallet por user (
 }
 ```
 
-`exported_at` omitido se nunca exportou. `balance_usdc` = `ChainClient.Balance` (0 se nunca mintou). `reward_usdc` = soma de `attestations.reward_usdc`.
+`exported_at` omitido se nunca exportou. `balance_usdc` = `ChainClient.Balance` na Devnet (0 se a ATA USDC ainda não existe). `reward_usdc` = soma de `attestations.reward_usdc`.
 
 **409** `wallet já cadastrada` (user ou pubkey duplicados).
 
@@ -909,6 +915,49 @@ Público. Chamar **antes** de cifrar, de preferência perto do reveal (chave moc
 
 `provider`: `mock` \| `nitro`. **502** se Identity falhar.
 
+### Stake on-chain (co-sign do produtor)
+
+Com `CHAIN_SOLANA_PROGRAM_ID` o lock **move USDC** (ATA do produtor → vault PDA). O backend **não tem** a chave do produtor. Fluxo na **attempt 1**:
+
+1. `POST /chain/stake/lock-tx` → tx parcial (fee payer = treasury, já assinada pela treasury)
+2. App assina com a keypair do produtor (`partialSign` / `signTransaction`)
+3. `POST /chain/stake/lock-submit` → backend co-assina se faltar e envia
+4. `POST /contributions/commit` com `stake_tx` = a `signature` do passo 3 (ou `signed_tx` = a tx base64 já assinada, pulando o submit)
+
+Sem program id (fallback): `commit` ainda chama `LockStake` Memo só com a treasury. O two-step também funciona (Memo com producer signer).
+
+#### `POST /api/v1/chain/stake/lock-tx`
+
+Bearer producer. Amount em **micro-USDC** (10 USDC = `10000000`). `0` ou omitido → config `stake.amount_usdc`.
+
+```json
+{ "amount": 10000000 }
+```
+
+**200** `{ "tx": "<base64 da tx parcial>" }`
+
+A tx já traz a assinatura da treasury. O app **não** troca o fee payer. Assina o produtor e devolve o byteserializado em base64 std.
+
+#### `POST /api/v1/chain/stake/lock-submit`
+
+```json
+{ "tx": "<base64 com sig do produtor>" }
+```
+
+**200** `{ "signature": "<base58 Solana>" }`
+
+**400** se faltar a assinatura do produtor. **502** se a RPC rejeitar (ATA sem USDC, programa não inicializado, blockhash expirado ~60s).
+
+Guarde `signature` e mande no commit como `stake_tx`.
+
+#### `POST /api/v1/contributions/{id}/release-stake/tx` e `.../submit`
+
+Mesmo formato `{ "tx": "..." }` / `{ "signature": "..." }`. `{id}` = contribution com stake `locked` do caller.
+
+O worker de validação **não** libera on-chain quando o programa exige o produtor (log + stake continua `locked`). O app deve chamar o release depois de 2 ciclos aceitos.
+
+`POST /admin/chain/initialize` (admin) chama `initialize` uma vez. Equivalente CLI: `agrobench chain-init`.
+
 ### `POST /api/v1/contributions/commit`
 
 Bearer producer.
@@ -918,15 +967,18 @@ Bearer producer.
   "cycle_id": "0193b000-0000-7000-8000-000000000001",
   "property_id": "0193a0c4-....",
   "level": "basic",
-  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "stake_tx": "<signature do lock-submit, attempt 1>"
 }
 ```
+
+`stake_tx` e `signed_tx` são opcionais. Com programa Anchor na attempt 1, **um dos dois é obrigatório** (senão 400 `assine o lock de stake antes do commit`). `signed_tx` = mesma base64 do lock-submit; o backend envia na hora.
 
 README §7 omite `property_id`. **O código exige** UUID `required`.
 
 `hash`: `len=64` (não valida hex). `level`: `oneof=basic intermediate advanced`.
 
-Regras: ciclo `IsOpen`; property do user e `car_status=approved`; wallet existe; sem contribuição ativa no ciclo; attempt 1 ou 2; `ChainClient.Commit`; se attempt 1, `LockStake(stake.amount_usdc=10)`.
+Regras: ciclo `IsOpen`; property do user e `car_status=approved`; wallet existe; sem contribuição ativa no ciclo; attempt 1 ou 2; lock on-chain (two-step ou `LockStake` no fallback); `ChainClient.Commit` (Memo).
 
 **201**
 
@@ -938,7 +990,7 @@ Regras: ciclo `IsOpen`; property do user e `car_status=approved`; wallet existe;
   "level": "basic",
   "attempt": 1,
   "commit_hash": "aaaa...aaaa",
-  "commit_tx": "<tx mock>",
+  "commit_tx": "<signature Solana, base58>",
   "status": "committed"
 }
 ```
@@ -1012,7 +1064,7 @@ Se passou a trava mas o ciclo ainda não tem `aggregates`, `metrics` pode ser `n
 
 **`cycles_validated` é hardcoded `0` no handler**, mesmo quando o use case calculou 1 ou 2. O número real está em `detail` (`N/M`). Não use `cycles_validated` para UX de progresso. `cycles_required` vem da config (3).
 
-Seed-demo: os 14 produtores já têm 3 ciclos aceitos → painel **200** para esses `cycle_id` aggregated. Produtor novo: 403 até 3 aceitos consecutivos na mesma cultura×região.
+Seed-demo: o produtor único já tem 3 ciclos aceitos → painel **200** para esses `cycle_id` aggregated. Produtor novo: 403 até 3 aceitos consecutivos na mesma cultura×região.
 
 ### `GET /api/v1/benchmark/report?cycle=<uuid>`
 
@@ -1174,7 +1226,7 @@ Bearer admin. Query `month` (`YYYY-MM`). Vazio → o worker usa **mês calendár
 
 ### `POST /api/v1/admin/seed/demo`
 
-Bearer admin. Sem body. **200** `{ "status": "ok" }`. Idempotente o bastante (ON CONFLICT / skip email existente). Cria 14 producers, 3 ciclos aggregated, instituição aprovada, pool `2025-08`.
+Bearer admin. Sem body. **200** `{ "status": "ok" }`. Idempotente o bastante (ON CONFLICT / skip email oficial existente; recria `seed.farmer.*`). Cria o produtor oficial, agricultores extras em várias microrregiões do RS, ciclos aggregated + `2026/27` aberto, Cotrijal aprovada, pool `2025-08` / `2026-08` / `2026-09`.
 
 ### `POST /api/v1/admin/jobs/run/{kind}`
 
@@ -1259,10 +1311,15 @@ POST /api/v1/property
 GET  /api/v1/enclave/public-key → box_public_key
 # Seal(bytes, box_pub) → ciphertext b64  (pode ser depois do commit; hash já fechado)
 
+# Attempt 1 com programa: lock on-chain ANTES do commit.
+POST /api/v1/chain/stake/lock-tx { "amount": 10000000 } → { tx }
+# App: deserialize, partialSign com a keypair do produtor, serialize base64.
+POST /api/v1/chain/stake/lock-submit { tx } → { signature }
+
 POST /api/v1/contributions/commit
-  { cycle_id, property_id, level: "basic", hash }
+  { cycle_id, property_id, level: "basic", hash, stake_tx }
   → 201 { id, status: "committed", attempt, commit_tx }
-  # 502 stake se balance_usdc < 10 (produtor não-seed)
+  # stake_tx = signature do lock-submit. Sem program id, commit ainda faz LockStake Memo sozinho.
 
 POST /api/v1/contributions/{id}/reveal
   { ciphertext }
@@ -1275,7 +1332,7 @@ loop:
 
 `rejected` + attempt 1 → pode commit de novo (attempt 2, sem novo stake). `accepted` → `GET /wallet` para ver `reward_usdc` / `balance_usdc`.
 
-Stake on-chain **real não existe** (`LockStake` Solana = `ErrNotImplemented`). No mock, stake = débito em `mock_chain_balances`. O app **não** assina transação Solana neste MVP.
+Com `CHAIN_SOLANA_PROGRAM_ID`, lock/release/credit/distribute passam pelo programa `agrobench` (USDC na vault PDA). `commit_tx` / atestação continuam Memo. Explorer: `https://explorer.solana.com/tx/<sig>?cluster=devnet`. Sem program id, lock no commit ainda é Memo.
 
 ### 15.5 Painel do produtor
 
@@ -1348,8 +1405,8 @@ Confirmar payment por UUID só se o id for conhecido; senão webhook §13.
 |---|---|---|
 | `rewards.base_usdc` | 5 | reward se accepted |
 | `rewards.level_multipliers` | 1 / 2 / 3.5 | × nível |
-| `stake.amount_usdc` | 10 | débito mock no 1º commit |
-| `stake.release_after_cycles` | 2 | auto, sem endpoint |
+| `stake.amount_usdc` | 10 | 10 USDC (`10_000_000` micro). Com `PROGRAM_ID`, `lock_stake` debita a ATA do produtor; sem id, Memo no commit |
+| `stake.release_after_cycles` | 2 | Com programa, o app co-assina release. Sem programa, Memo automático no worker |
 | `benchmark.free_after_cycles` | 3 | trava do painel |
 | `pool.maintainer_fee_pct` | 15 | split |
 | `pool.infra_cost_per_contribution_usdc` | 2 | split |
@@ -1368,7 +1425,7 @@ O frontend não configura isso.
 
 1. **OTP mock some no restart** (outbox memória). `GET /admin/otp/{user_id}` é público e só existe com SMS mock. Recovery não devolve `user_id`.
 2. **`cycles_validated` no 403 do painel é sempre 0.** Use `detail`. A trava dos 3 ciclos **existe** no use case.
-3. **Seed-demo grava contribuições já `accepted` e ciclos `aggregated`.** Não dá commit nesses ciclos. Painel dos `produtorNN` já abre. Produtor “limpo” tem **0 USDC** e commit 1 falha no stake; **não há mint HTTP**. Stake Solana real **não existe**.
+3. **Seed-demo:** 1 produtor oficial (`produtor@agrobench.local`) com pubkey Devnet `FXsin7UZTGrix1cEe1QpMDFz3a8cDHzVK7h2oisjpzf3` + extras `seed.farmer.NN` off-chain. Blob dummy — **não assina** lock no browser; use conta criada neste aparelho (`ensureWallet`). Com `PROGRAM_ID`, lock SPL na vault PDA. Recompensa ainda sai da treasury.
 4. **Pool: não há cron.** Só `POST /admin/pool/distribute?month=YYYY-MM` (ou `jobs/run/distribute_pool`). README mente no cron.
 5. **MFA obrigatório só para producer.** Institution/admin: login = tokens. Não chame `mfa/verify` com access token. MFA JWT no `Authorization` → 401.
 6. **Commit exige `property_id`** (README omite). **`GET /cultures` e `GET /micro-regions` existem** (README omite). Query de ciclos `culture`/`region` são **UUIDs**.
@@ -1378,7 +1435,7 @@ O frontend não configura isso.
 10. **Campos JSON extra → 400.** `DisallowUnknownFields`.
 11. **Reveal/GET-by-id não autorizam por dono.** Não exponha IDs de outros.
 12. **Hash = bytes exatos**, não “JSON parecido”. Canonicalize ou cache o buffer. `culture_code` lowercase do catálogo. Reveal 200 ≠ validação ok.
-13. **CARs 1–14** ocupados pelo seed-demo. Bruno `AAA...0001` conflita. Instituição Bruno CNPJ `...0001-99` conflita com seed.
+13. **CAR `…0001`** ocupado pelo seed-demo. Cadastro novo use 2–17. Instituição Bruno CNPJ `...0001-99` conflita com seed.
 14. **1 contribuição ativa / ciclo**; retry se `rejected`. Stake só na attempt 1. Poll após reveal (`revealed` → `validating` → terminal).
 15. **Jobs HTTP:** só `distribute_pool`. Close/reveal que enfileiram aggregate/validate. `GET /admin/otp` **não** é role admin.
 16. **Access 15 min, refresh rotaciona.** Reuso de refresh derruba a sessão em todos os devices.

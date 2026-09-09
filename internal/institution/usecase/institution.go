@@ -200,9 +200,7 @@ func (u *ConfirmPayment) Execute(ctx context.Context, paymentID uuid.UUID) error
 	if !ev.Confirmed {
 		return apperrors.Validation(op, errors.New("not paid")).WithDetail("pagamento não confirmado")
 	}
-	tx, err := u.chain.TransferUSDC(ctx, port.TransferRequest{
-		From: u.chain.Treasury(), To: u.chain.Pool(), Amount: coredomain.USDC(p.Amount), Memo: "pool:" + p.SubID.String(),
-	})
+	tx, err := u.chain.CreditPool(ctx, coredomain.USDC(p.Amount), "pool:"+p.SubID.String())
 	if err != nil {
 		return apperrors.External(op, 0, err)
 	}

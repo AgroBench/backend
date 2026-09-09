@@ -1,0 +1,25 @@
+meta {
+  name: Lock stake tx
+  type: http
+  seq: 30
+}
+
+post {
+  url: {{baseUrl}}/chain/stake/lock-tx
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "amount": 10000000
+  }
+}

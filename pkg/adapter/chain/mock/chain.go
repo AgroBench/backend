@@ -1,4 +1,5 @@
-// Package mock é a implementação de port.ChainClient ATIVA NO PITCH.
+// Package mock é a implementação de port.ChainClient para testes e seed-demo.
+// A demo de banca usa pkg/adapter/chain/solana (adapters.chain=solana).
 // Toda operação vira uma linha em mock_chain_events; saldos vivem em mock_chain_balances.
 // O TxRef é determinístico (hash do conteúdo), então re-executar a mesma operação no mesmo
 // contexto gera o mesmo id — parecido com a idempotência de uma tx real.
@@ -8,18 +9,22 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 
 	"github.com/AgroBench/backend/internal/core/domain"
 	"github.com/AgroBench/backend/pkg/adapter/database"
 	"github.com/AgroBench/backend/pkg/port"
 )
+
+var _ port.ChainClient = (*Chain)(nil)
 
 const (
 	kindCommit       = "commit"
@@ -128,6 +133,86 @@ func (c *Chain) ReleaseStake(ctx context.Context, req port.StakeRequest) (port.T
 		return err
 	})
 	return ref, err
+}
+
+func (c *Chain) ProgramID() string { return "" }
+
+func (c *Chain) BuildLockStakeTx(_ context.Context, req port.StakeRequest) (string, error) {
+	return encodeMockTx("lock_stake", req)
+}
+
+func (c *Chain) BuildReleaseStakeTx(_ context.Context, req port.StakeRequest) (string, error) {
+	return encodeMockTx("release_stake", req)
+}
+
+func (c *Chain) SubmitSignedTx(ctx context.Context, txBase64 string) (port.TxRef, error) {
+	kind, req, err := decodeMockTx(txBase64)
+	if err != nil {
+		return "", err
+	}
+	switch kind {
+	case "lock_stake":
+		return c.LockStake(ctx, req)
+	case "release_stake":
+		return c.ReleaseStake(ctx, req)
+	default:
+		return "", fmt.Errorf("chain mock: kind desconhecido %q", kind)
+	}
+}
+
+func (c *Chain) CreditPool(ctx context.Context, amount domain.MicroUSDC, memo string) (port.TxRef, error) {
+	return c.TransferUSDC(ctx, port.TransferRequest{
+		From: c.treasury, To: c.pool, Amount: amount, Memo: memo,
+	})
+}
+
+func (c *Chain) DistributePool(ctx context.Context, payouts []port.PoolPayout) (port.TxRef, error) {
+	var last port.TxRef
+	for _, p := range payouts {
+		ref, err := c.TransferUSDC(ctx, port.TransferRequest{
+			From: c.pool, To: p.Wallet, Amount: p.Amount, Memo: "payout",
+		})
+		if err != nil {
+			return last, err
+		}
+		last = ref
+	}
+	return last, nil
+}
+
+func (c *Chain) InitializeProgram(ctx context.Context) (port.TxRef, error) {
+	return c.record(ctx, c.db, "initialize", "", map[string]any{"at": time.Now().UTC()})
+}
+
+type mockTxEnvelope struct {
+	Kind           string    `json:"kind"`
+	Wallet         string    `json:"wallet"`
+	Amount         int64     `json:"amount"`
+	ContributionID uuid.UUID `json:"contribution_id"`
+}
+
+func encodeMockTx(kind string, req port.StakeRequest) (string, error) {
+	raw, err := json.Marshal(mockTxEnvelope{
+		Kind: kind, Wallet: string(req.Wallet), Amount: int64(req.Amount), ContributionID: req.ContributionID,
+	})
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(raw), nil
+}
+
+func decodeMockTx(b64 string) (string, port.StakeRequest, error) {
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return "", port.StakeRequest{}, fmt.Errorf("chain mock: tx não é base64: %w", err)
+	}
+	var env mockTxEnvelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return "", port.StakeRequest{}, fmt.Errorf("chain mock: tx inválida: %w", err)
+	}
+	return env.Kind, port.StakeRequest{
+		Wallet: port.Account(env.Wallet), ContributionID: env.ContributionID, Amount: domain.MicroUSDC(env.Amount),
+	}, nil
 }
 
 func (c *Chain) Balance(ctx context.Context, account port.Account) (domain.MicroUSDC, error) {

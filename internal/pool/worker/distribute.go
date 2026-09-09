@@ -94,6 +94,14 @@ func (w *Distribute) Work(ctx context.Context, job *river.Job[queue.DistributePo
 		return nil
 	}
 
+	type pendingPayout struct {
+		WalletID uuid.UUID
+		CycleID  uuid.UUID
+		Pubkey   port.Account
+		Amount   coredomain.MicroUSDC
+	}
+	var pending []pendingPayout
+
 	for _, a := range accesses {
 		slice := net * float64(a.N) / float64(totalAcc)
 		type wt struct {
@@ -115,19 +123,43 @@ func (w *Distribute) Work(ctx context.Context, job *river.Job[queue.DistributePo
 			if amt <= 0 {
 				continue
 			}
-			tx, err := w.chain.TransferUSDC(ctx, port.TransferRequest{
-				From: w.chain.Pool(), To: port.Account(walletPubkey(ctx, w.db, x.Wallet)),
-				Amount: amt, Memo: "payout:" + periodID.String(),
+			pending = append(pending, pendingPayout{
+				WalletID: x.Wallet, CycleID: a.CycleID,
+				Pubkey: walletPubkey(ctx, w.db, x.Wallet), Amount: amt,
+			})
+		}
+	}
+
+	useProgram := w.chain.ProgramID() != ""
+	var batchRef port.TxRef
+	if useProgram && len(pending) > 0 {
+		payouts := make([]port.PoolPayout, 0, len(pending))
+		for _, p := range pending {
+			payouts = append(payouts, port.PoolPayout{Wallet: p.Pubkey, Amount: p.Amount})
+		}
+		ref, err := w.chain.DistributePool(ctx, payouts)
+		if err != nil {
+			return err
+		}
+		batchRef = ref
+	}
+
+	for _, p := range pending {
+		tx := batchRef
+		var err error
+		if !useProgram {
+			tx, err = w.chain.TransferUSDC(ctx, port.TransferRequest{
+				From: w.chain.Pool(), To: p.Pubkey, Amount: p.Amount, Memo: "payout:" + periodID.String(),
 			})
 			if err != nil {
-				slog.Warn("payout falhou", "wallet", x.Wallet, "err", err)
+				slog.Warn("payout falhou", "wallet", p.WalletID, "err", err)
 				continue
 			}
-			_, _ = w.db.ExecContext(ctx, `
-				INSERT INTO payouts (id, pool_period_id, wallet_id, cycle_id, amount_usdc, tx)
-				VALUES ($1,$2,$3,$4,$5,$6)`,
-				coredomain.NewID(), periodID, x.Wallet, a.CycleID, amt.Float(), string(tx))
 		}
+		_, _ = w.db.ExecContext(ctx, `
+			INSERT INTO payouts (id, pool_period_id, wallet_id, cycle_id, amount_usdc, tx)
+			VALUES ($1,$2,$3,$4,$5,$6)`,
+			coredomain.NewID(), periodID, p.WalletID, p.CycleID, p.Amount.Float(), string(tx))
 	}
 	slog.Info("pool distribuído", "month", month, "net", net)
 	return nil

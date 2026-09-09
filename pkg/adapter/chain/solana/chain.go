@@ -1,17 +1,13 @@
-// Package solana é a implementação REAL de port.ChainClient (NÃO ativa no pitch).
+// Package solana é a implementação REAL de port.ChainClient (devnet no pitch).
 //
-// Estratégia sem programa on-chain próprio (README §2, "Chain real"):
-//   - Commit, atestação e resultado de CAR são transações com o Memo program, assinadas e
-//     pagas pela treasury do protocolo (o produtor nunca precisa de SOL — README raiz §6.1).
-//   - Recompensas e payouts são transferências USDC-SPL da ATA da treasury para a ATA da
-//     wallet do produtor (criada pela treasury se não existir).
-//   - LockStake/ReleaseStake exigem que o PRODUTOR assine (é o USDC dele). Como a chave
-//     privada nunca chega ao backend (README raiz §6.1), o fluxo real precisa de uma transação
-//     pré-assinada pelo app → fica ErrNotImplemented até esse fluxo existir. Evolução: um
-//     programa Anchor de escrow.
+// Com CHAIN_SOLANA_PROGRAM_ID:
+//   - lock_stake / release_stake no programa agrobench (USDC na vault PDA).
+//     O produtor assina no device; a treasury é fee payer e co-assina.
+//   - credit_pool e distribute on-chain (pool = PDA ["pool"]).
+//   - Commit / atestação / CAR continuam Memo (commit-reveal).
 //
-// Status: semi-pronto. Compila e segue a API do solana-go v1.23, mas não foi executado
-// contra a devnet dentro do escopo do MVP.
+// Sem program id (fallback da demo se o programa ainda não fez deploy):
+//   - Memo + SPL da treasury, como antes.
 package solana
 
 import (
@@ -40,7 +36,8 @@ type Config struct {
 	RPCURL             string        // ex.: https://api.devnet.solana.com
 	TreasuryPrivateKey string        // base58 (SOLANA_TREASURY_PRIVATE_KEY no .env)
 	USDCMint           string        // devnet: 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
-	PoolPubkey         string        // wallet do pool; no MVP pode ser a própria treasury
+	PoolPubkey         string        // ignorado se ProgramID está setado (usa PDA)
+	ProgramID          string        // agrobench; vazio = fallback Memo/SPL
 	ConfirmTimeout     time.Duration // default 60s
 }
 
@@ -49,6 +46,7 @@ type Chain struct {
 	treasury ag.PrivateKey
 	mint     ag.PublicKey
 	pool     ag.PublicKey
+	program  ag.PublicKey
 	timeout  time.Duration
 }
 
@@ -56,7 +54,7 @@ func New(cfg Config) (*Chain, error) {
 	if cfg.RPCURL == "" || cfg.TreasuryPrivateKey == "" || cfg.USDCMint == "" {
 		return nil, errors.New("chain solana: rpc_url, treasury_private_key e usdc_mint são obrigatórios")
 	}
-	treasury, err := ag.PrivateKeyFromBase58(cfg.TreasuryPrivateKey)
+	treasury, err := ag.PrivateKeyFromBase58(strings.TrimSpace(cfg.TreasuryPrivateKey))
 	if err != nil {
 		return nil, fmt.Errorf("chain solana: treasury_private_key: %w", err)
 	}
@@ -64,8 +62,20 @@ func New(cfg Config) (*Chain, error) {
 	if err != nil {
 		return nil, fmt.Errorf("chain solana: usdc_mint: %w", err)
 	}
+
+	var program ag.PublicKey
 	pool := treasury.PublicKey()
-	if cfg.PoolPubkey != "" {
+	if strings.TrimSpace(cfg.ProgramID) != "" {
+		program, err = ag.PublicKeyFromBase58(strings.TrimSpace(cfg.ProgramID))
+		if err != nil {
+			return nil, fmt.Errorf("chain solana: program_id: %w", err)
+		}
+		derived, _, err := poolPDA(program)
+		if err != nil {
+			return nil, fmt.Errorf("chain solana: pool PDA: %w", err)
+		}
+		pool = derived
+	} else if cfg.PoolPubkey != "" {
 		if pool, err = ag.PublicKeyFromBase58(cfg.PoolPubkey); err != nil {
 			return nil, fmt.Errorf("chain solana: pool_pubkey: %w", err)
 		}
@@ -73,7 +83,10 @@ func New(cfg Config) (*Chain, error) {
 	if cfg.ConfirmTimeout == 0 {
 		cfg.ConfirmTimeout = 60 * time.Second
 	}
-	return &Chain{rpc: rpc.New(cfg.RPCURL), treasury: treasury, mint: mint, pool: pool, timeout: cfg.ConfirmTimeout}, nil
+	return &Chain{
+		rpc: rpc.New(cfg.RPCURL), treasury: treasury, mint: mint,
+		pool: pool, program: program, timeout: cfg.ConfirmTimeout,
+	}, nil
 }
 
 func (c *Chain) Treasury() port.Account { return port.Account(c.treasury.PublicKey().String()) }
@@ -91,13 +104,24 @@ func (c *Chain) RecordCARVerification(ctx context.Context, wallet port.Account, 
 	return c.sendMemo(ctx, fmt.Sprintf("%s:car:%s:%t", memoPrefix, wallet, approved))
 }
 
-// TransferUSDC só consegue assinar saídas da treasury (e do pool, quando pool == treasury).
+// TransferUSDC só consegue assinar saídas da treasury. Com programa, crédito no pool
+// e payouts passam por credit_pool / distribute.
 func (c *Chain) TransferUSDC(ctx context.Context, req port.TransferRequest) (port.TxRef, error) {
 	if req.Amount <= 0 {
 		return "", errors.New("chain solana: valor deve ser positivo")
 	}
+	if c.hasProgram() && req.To == c.Pool() && req.From == c.Treasury() {
+		return c.CreditPool(ctx, req.Amount, req.Memo)
+	}
+	if c.hasProgram() && req.From == c.Pool() {
+		return c.DistributePool(ctx, []port.PoolPayout{{Wallet: req.To, Amount: req.Amount}})
+	}
 	if req.From != c.Treasury() {
 		return "", fmt.Errorf("%w: TransferUSDC a partir de %s (só a treasury pode assinar)", port.ErrNotImplemented, req.From)
+	}
+	// Pool == treasury (fallback sem programa): não há conta de destino distinta.
+	if req.To == c.Treasury() {
+		return c.sendMemo(ctx, fmt.Sprintf("%s:%s", memoPrefix, req.Memo))
 	}
 	to, err := ag.PublicKeyFromBase58(string(req.To))
 	if err != nil {
@@ -128,12 +152,22 @@ func (c *Chain) TransferUSDC(ctx context.Context, req port.TransferRequest) (por
 	return c.sendAndConfirm(ctx, instrs)
 }
 
-func (c *Chain) LockStake(context.Context, port.StakeRequest) (port.TxRef, error) {
-	return "", fmt.Errorf("%w: LockStake exige assinatura do produtor (ver comentário do pacote)", port.ErrNotImplemented)
+func (c *Chain) LockStake(ctx context.Context, req port.StakeRequest) (port.TxRef, error) {
+	if c.hasProgram() {
+		return "", fmt.Errorf("%w: use POST /chain/stake/lock-tx", port.ErrNeedsCoSign)
+	}
+	return c.sendMemo(ctx, stakeMemo("lock", req))
 }
 
-func (c *Chain) ReleaseStake(context.Context, port.StakeRequest) (port.TxRef, error) {
-	return "", fmt.Errorf("%w: ReleaseStake exige escrow on-chain (ver comentário do pacote)", port.ErrNotImplemented)
+func (c *Chain) ReleaseStake(ctx context.Context, req port.StakeRequest) (port.TxRef, error) {
+	if c.hasProgram() {
+		return "", fmt.Errorf("%w: use POST /contributions/{id}/release-stake/tx", port.ErrNeedsCoSign)
+	}
+	return c.sendMemo(ctx, stakeMemo("release", req))
+}
+
+func stakeMemo(kind string, req port.StakeRequest) string {
+	return fmt.Sprintf("%s:stake:%s:%s:%s:%d", memoPrefix, kind, req.Wallet, req.ContributionID, req.Amount)
 }
 
 func (c *Chain) Balance(ctx context.Context, account port.Account) (domain.MicroUSDC, error) {
@@ -179,12 +213,7 @@ func (c *Chain) sendAndConfirm(ctx context.Context, instrs []ag.Instruction) (po
 	if err != nil {
 		return "", fmt.Errorf("chain solana: montando tx: %w", err)
 	}
-	if _, err := tx.Sign(func(key ag.PublicKey) *ag.PrivateKey {
-		if key.Equals(c.treasury.PublicKey()) {
-			return &c.treasury
-		}
-		return nil
-	}); err != nil {
+	if _, err := tx.Sign(c.treasurySigner); err != nil {
 		return "", fmt.Errorf("chain solana: assinando tx: %w", err)
 	}
 

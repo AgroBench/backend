@@ -7,6 +7,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/AgroBench/backend/internal/admin/seed"
+	"github.com/AgroBench/backend/internal/apperrors"
 	"github.com/AgroBench/backend/internal/core/auth"
 	coredomain "github.com/AgroBench/backend/internal/core/domain"
 	"github.com/AgroBench/backend/internal/core/httpx"
@@ -43,6 +44,18 @@ func Register(r chi.Router, db *sqlx.DB, adapters *registry.Adapters, q *queue.Q
 				return
 			}
 			w.WriteHeader(http.StatusAccepted)
+		})
+		adm.Post("/admin/chain/initialize", func(w http.ResponseWriter, r *http.Request) {
+			if adapters == nil || adapters.Chain == nil {
+				httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{"code": "INTERNAL_ERROR", "message": "chain indisponível"})
+				return
+			}
+			ref, err := adapters.Chain.InitializeProgram(r.Context())
+			if err != nil {
+				httpx.Error(w, r, apperrors.External("admin.ChainInit", 0, err).WithDetail("falha ao inicializar o programa"))
+				return
+			}
+			httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok", "signature": string(ref)})
 		})
 	})
 }

@@ -1,0 +1,25 @@
+meta {
+  name: Release stake submit
+  type: http
+  seq: 34
+}
+
+post {
+  url: {{baseUrl}}/contributions/{{contribution_id}}/release-stake/submit
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tx": "{{signed_release_tx}}"
+  }
+}

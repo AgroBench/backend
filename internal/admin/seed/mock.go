@@ -45,14 +45,16 @@ func seedMockRanges(ctx context.Context, db *sqlx.DB) error {
 		{"wheat", "yield_sacks_ha", 15, 80},
 		{"wheat", "area_ha", 1, 5000},
 	}
-	for _, r := range ranges {
-		_, err := db.ExecContext(ctx, `
-			INSERT INTO mock_reference_ranges (culture_code, ibge_code, metric, min_value, max_value)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (culture_code, ibge_code, metric) DO NOTHING`,
-			r.culture, passoFundoIBGE, r.metric, r.min, r.max)
-		if err != nil {
-			return err
+	for _, region := range rsMicroRegions {
+		for _, r := range ranges {
+			_, err := db.ExecContext(ctx, `
+				INSERT INTO mock_reference_ranges (culture_code, ibge_code, metric, min_value, max_value)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT (culture_code, ibge_code, metric) DO NOTHING`,
+				r.culture, region.code, r.metric, r.min, r.max)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

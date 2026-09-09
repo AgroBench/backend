@@ -18,6 +18,7 @@ type Repo interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.Status, reason string) error
 	CreateStake(ctx context.Context, s domain.Stake) error
 	GetLockedStakeByWallet(ctx context.Context, walletID uuid.UUID) (domain.Stake, error)
+	GetStakeByContribution(ctx context.Context, contributionID uuid.UUID) (domain.Stake, error)
 	ReleaseStake(ctx context.Context, id uuid.UUID, tx string) error
 	SaveVerdict(ctx context.Context, v domain.Verdict, metrics []domain.ValidatedMetric) error
 	SaveAttestation(ctx context.Context, a domain.Attestation) error
