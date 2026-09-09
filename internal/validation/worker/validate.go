@@ -45,6 +45,9 @@ func (w *Validate) Work(ctx context.Context, job *river.Job[queue.ValidateContri
 	if err != nil {
 		return err
 	}
+	if c.Status == domain.StatusAccepted || c.Status == domain.StatusRejected {
+		return nil
+	}
 	_ = repo.UpdateStatus(ctx, c.ID, domain.StatusValidating, "")
 
 	cycle, err := cycles.GetByID(ctx, c.CycleID)
@@ -116,14 +119,18 @@ func (w *Validate) Work(ctx context.Context, job *river.Job[queue.ValidateContri
 	if err != nil {
 		return err
 	}
-	_, err = w.chain.TransferUSDC(ctx, port.TransferRequest{
+	paid := reward.Float()
+	rewardTx := string(attestTx)
+	if ref, err := w.chain.TransferUSDC(ctx, port.TransferRequest{
 		From: w.chain.Treasury(), To: port.Account(wallet.Pubkey), Amount: reward, Memo: "reward:" + c.ID.String(),
-	})
-	if err != nil {
-		return err
+	}); err != nil {
+		slog.Warn("recompensa USDC não enviada; contribuição segue aceita", "id", c.ID, "err", err)
+		paid = 0
+	} else {
+		rewardTx = string(ref)
 	}
 	if err := repo.SaveAttestation(ctx, domain.Attestation{
-		ID: coredomain.NewID(), ContributionID: c.ID, Tx: string(attestTx), RewardUSDC: reward.Float(), PaidAt: time.Now(),
+		ID: coredomain.NewID(), ContributionID: c.ID, Tx: rewardTx, RewardUSDC: paid, PaidAt: time.Now(),
 	}); err != nil {
 		return err
 	}
